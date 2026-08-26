@@ -38,13 +38,20 @@ jobs:
         working-directory: scraper
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Passed via env (not interpolated into the script) so values with
+          # spaces (e.g. a tag like "Water Crisis") and untrusted input are
+          # both handled safely.
+          IN_TAG: ${{ inputs.tag }}
+          IN_SITE: ${{ inputs.site }}
+          IN_SINCE: ${{ inputs.since }}
+          IN_LIMIT: ${{ inputs.limit }}
         run: |
-          ARGS=""
-          if [ -n "${{ inputs.tag }}" ]; then ARGS="$ARGS --tag=${{ inputs.tag }}"; fi
-          if [ -n "${{ inputs.site }}" ]; then ARGS="$ARGS --site=${{ inputs.site }}"; fi
-          if [ -n "${{ inputs.since }}" ]; then ARGS="$ARGS --since=${{ inputs.since }}"; fi
-          if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit=${{ inputs.limit }}"; fi
-          npm run analyze -- $ARGS
+          ARGS=()
+          [ -n "$IN_TAG" ] && ARGS+=(--tag="$IN_TAG")
+          [ -n "$IN_SITE" ] && ARGS+=(--site="$IN_SITE")
+          [ -n "$IN_SINCE" ] && ARGS+=(--since="$IN_SINCE")
+          [ -n "$IN_LIMIT" ] && ARGS+=(--limit="$IN_LIMIT")
+          npm run analyze -- "${ARGS[@]}"
 
       - name: Commit report
         run: |
