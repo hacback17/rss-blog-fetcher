@@ -14,7 +14,14 @@ const SEED_TAGS = [
   "Mining & Minerals", "Transport & Mobility",
 ];
 
+// Tags stay tightly capped (they drive the sidebar's grouping UI, and the
+// whole point is a small reusable set of categories rather than one tag per
+// article). Keywords are a *different* signal — specific entities/terms for
+// precise search and for the "ask your archive" retrieval feature — so they
+// get a much looser cap; more of them only helps matching, and they never
+// appear as their own grouping UI.
 const MAX_TAGS = 5;
+const MAX_KEYWORDS = 12;
 const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
@@ -41,20 +48,26 @@ function throttledGroqCall(prompt) {
 function buildPrompt(article, vocabulary) {
   const excerpt = (article.contentText || "").slice(0, 1200);
   return [
-    "You are tagging a news/blog article with broad SUBJECT CATEGORIES for a personal archive.",
-    `Return at most ${MAX_TAGS} tags, ranked best-first, that describe the article well.`,
-    "Strongly prefer reusing one of the EXISTING TAGS below when it reasonably fits — the goal is a",
-    "small, consistent set of categories, not a new tag per article. Only invent a new tag when none",
-    "of the existing ones fit at all. Tags must be short (1-4 words), broad categories in Title Case",
-    "(e.g. \"Water Crisis\", \"Air Pollution\", \"Data Centre\") — never a full sentence, never the",
-    "article's own title, never a proper noun/place name alone.",
+    "You are indexing a news/blog article for a personal, searchable archive. Produce two different",
+    "kinds of labels:",
+    "",
+    `1. TAGS — at most ${MAX_TAGS} broad SUBJECT CATEGORIES, ranked best-first. Strongly prefer reusing`,
+    "one of the EXISTING TAGS below when it reasonably fits — the goal is a small, consistent set of",
+    "categories, not a new tag per article. Only invent a new one when none of the existing ones fit at",
+    "all. Short (1-4 words), Title Case (e.g. \"Water Crisis\", \"Data Centre\") — never a full sentence,",
+    "never the article's own title, never a proper noun/place name alone.",
+    "",
+    `2. KEYWORDS — up to ${MAX_KEYWORDS} specific, searchable terms from THIS article: named entities`,
+    "(people, organizations, places, projects, laws/policies, species, technical terms). These are for",
+    "precise search, so be specific rather than broad — the opposite instinct from tags. No duplicates",
+    "of what's already in TAGS.",
     "",
     `EXISTING TAGS: ${vocabulary.join(", ")}`,
     "",
     `TITLE: ${article.title || ""}`,
     `EXCERPT: ${excerpt}`,
     "",
-    'Respond with ONLY a JSON object: {"tags": ["Tag One", "Tag Two"]} — no other text.',
+    'Respond with ONLY a JSON object: {"tags": ["..."], "keywords": ["..."]} — no other text.',
   ].join("\n");
 }
 
@@ -72,7 +85,7 @@ async function callGroq(prompt) {
         messages: [{ role: "user", content: prompt }],
         temperature: 0.2,
         // gpt-oss is a reasoning model; without this it burns hundreds of
-        // hidden reasoning tokens on a 5-word tagging task and blows
+        // hidden reasoning tokens on a simple tagging task and blows
         // straight through the free tier's tokens-per-minute limit.
         reasoning_effort: "low",
         response_format: { type: "json_object" },
@@ -87,24 +100,31 @@ async function callGroq(prompt) {
   return content;
 }
 
-function parseTags(jsonText) {
+function cleanList(list, maxLen, maxItems) {
+  return (Array.isArray(list) ? list : [])
+    .map((t) => String(t).trim().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .map((t) => (t.length > maxLen ? t.slice(0, maxLen) : t))
+    .slice(0, maxItems);
+}
+
+function parseResult(jsonText) {
   let parsed;
   try {
     parsed = JSON.parse(jsonText);
   } catch {
     throw new Error("model did not return valid JSON");
   }
-  const tags = Array.isArray(parsed.tags) ? parsed.tags : [];
-  return tags
-    .map((t) => String(t).trim().replace(/\s+/g, " "))
-    .filter(Boolean)
-    .map((t) => (t.length > 40 ? t.slice(0, 40) : t))
-    .slice(0, MAX_TAGS);
+  return {
+    tags: cleanList(parsed.tags, 40, MAX_TAGS),
+    keywords: cleanList(parsed.keywords, 60, MAX_KEYWORDS),
+  };
 }
 
 // Simple offline fallback (no API key configured): scores each seed/known
 // category by keyword hits in the title+text, so tagging still works with
-// zero setup, just less precisely than the LLM path.
+// zero setup, just less precisely than the LLM path. The matched phrases
+// double as a rough keywords list.
 const KEYWORD_MAP = {
   "Water Crisis": ["water crisis", "drought", "water scarcity", "groundwater"],
   "Water Resources": ["river", "wetland", "reservoir", "irrigation", "water resource"],
@@ -127,34 +147,38 @@ const KEYWORD_MAP = {
   "Ocean & Coastal": ["ocean", "coastal", "marine", "sea level"],
 };
 
-function keywordFallbackTags(article) {
+function keywordFallback(article) {
   const haystack = `${article.title || ""} ${article.contentText || ""}`.toLowerCase();
   const scored = Object.entries(KEYWORD_MAP)
-    .map(([tag, keywords]) => ({ tag, hits: keywords.filter((k) => haystack.includes(k)).length }))
-    .filter((r) => r.hits > 0)
-    .sort((a, b) => b.hits - a.hits);
-  return scored.slice(0, MAX_TAGS).map((r) => r.tag);
+    .map(([tag, keywords]) => ({ tag, hits: keywords.filter((k) => haystack.includes(k)) }))
+    .filter((r) => r.hits.length > 0)
+    .sort((a, b) => b.hits.length - a.hits.length);
+  return {
+    tags: scored.slice(0, MAX_TAGS).map((r) => r.tag),
+    keywords: [...new Set(scored.flatMap((r) => r.hits))].slice(0, MAX_KEYWORDS),
+  };
 }
 
 let warnedNoKey = false;
 
+// Returns { tags: string[], keywords: string[] }.
 export async function generateTags(article, existingTagNames) {
   if (!process.env.GROQ_API_KEY) {
     if (!warnedNoKey) {
       console.log("  (auto-tagging: no GROQ_API_KEY set, using offline keyword fallback)");
       warnedNoKey = true;
     }
-    return keywordFallbackTags(article);
+    return keywordFallback(article);
   }
 
   const vocabulary = [...new Set([...existingTagNames, ...SEED_TAGS])].slice(0, 40);
   const prompt = buildPrompt(article, vocabulary);
   try {
     const content = await throttledGroqCall(prompt);
-    const tags = parseTags(content);
-    return tags.length ? tags : keywordFallbackTags(article);
+    const result = parseResult(content);
+    return result.tags.length || result.keywords.length ? result : keywordFallback(article);
   } catch (err) {
     console.warn(`  ! auto-tagging via Groq failed (${err.message}), falling back to keywords`);
-    return keywordFallbackTags(article);
+    return keywordFallback(article);
   }
 }

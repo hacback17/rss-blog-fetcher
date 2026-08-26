@@ -6,6 +6,8 @@ const SQLITE_DESERIALIZE_FREEONCLOSE = 1;
 const SQLITE_DESERIALIZE_RESIZEABLE = 2; // without this, any INSERT that grows the db fails with SQLITE_FULL
 const OVERLAY_KEY = "blogArchive.overlay.v1";
 const THEME_KEY = "blogArchive.theme";
+const AI_SETTINGS_KEY = "blogArchive.aiSettings.v1";
+const SITES_URL = "data/sites.json";
 
 const state = {
   db: null,
@@ -27,6 +29,10 @@ const els = {};
   "reader-words", "reader-body", "reader-source-link", "reader-pane", "reader-read-toggle",
   "reader-tags", "theme-toggle", "data-menu-btn", "data-menu", "export-db-btn", "export-jsonl-btn",
   "export-overlay-btn", "import-overlay-input", "reports-btn", "reports-menu", "reports-list",
+  "sources-btn", "sources-menu", "sources-list", "export-sources-btn",
+  "ask-btn", "ask-panel", "ask-settings-btn", "ask-close-btn", "ask-settings", "ask-provider",
+  "ask-key-row", "ask-api-key", "ask-local-url-row", "ask-local-url", "ask-local-model-row",
+  "ask-local-model", "ask-messages", "ask-form", "ask-input",
 ].forEach((id) => {
   els[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
 });
@@ -247,15 +253,23 @@ function wireEvents() {
     els.reportsMenu.classList.toggle("hidden");
     if (!els.reportsMenu.classList.contains("hidden")) loadReportsList();
   });
+  els.sourcesBtn.addEventListener("click", () => {
+    els.sourcesMenu.classList.toggle("hidden");
+    if (!els.sourcesMenu.classList.contains("hidden")) loadSourcesList();
+  });
   document.addEventListener("click", (e) => {
     if (!els.dataMenu.contains(e.target) && e.target !== els.dataMenuBtn) els.dataMenu.classList.add("hidden");
     if (!els.reportsMenu.contains(e.target) && e.target !== els.reportsBtn) els.reportsMenu.classList.add("hidden");
+    if (!els.sourcesMenu.contains(e.target) && e.target !== els.sourcesBtn) els.sourcesMenu.classList.add("hidden");
   });
 
   els.exportDbBtn.addEventListener("click", exportDatabase);
   els.exportJsonlBtn.addEventListener("click", exportJsonl);
   els.exportOverlayBtn.addEventListener("click", exportOverlay);
   els.importOverlayInput.addEventListener("change", importOverlay);
+  els.exportSourcesBtn.addEventListener("click", exportSourcesConfig);
+
+  wireAskPanel();
 }
 
 // ---------- query helpers ----------
@@ -552,6 +566,49 @@ async function loadReportsList() {
   }
 }
 
+// ---------- sources ----------
+
+let sitesConfigCache = null;
+
+async function fetchSitesConfig() {
+  if (sitesConfigCache) return sitesConfigCache;
+  const res = await fetch(SITES_URL, { cache: "no-cache" });
+  if (!res.ok) throw new Error(`could not fetch ${SITES_URL} (${res.status})`);
+  sitesConfigCache = await res.json();
+  return sitesConfigCache;
+}
+
+async function loadSourcesList() {
+  els.sourcesList.innerHTML = "<li>Loading…</li>";
+  try {
+    const cfg = await fetchSitesConfig();
+    els.sourcesList.innerHTML = "";
+    for (const site of cfg.sites || []) {
+      const li = document.createElement("li");
+      const robotsOff = site.respectRobotsTxt === false || (cfg.respectRobotsTxt === false && site.respectRobotsTxt !== true);
+      const urls = [...(site.sitemapUrls || []), ...(site.rssUrls || [])];
+      li.innerHTML = `
+        <span class="source-name">${escapeHtml(site.name)}</span>
+        ${robotsOff ? '<span class="source-flag">robots.txt bypassed</span>' : ""}
+        ${urls.map((u) => `<span class="source-url">${escapeHtml(u)}</span>`).join("")}
+      `;
+      els.sourcesList.appendChild(li);
+    }
+    if (!cfg.sites?.length) els.sourcesList.innerHTML = '<li class="reports-empty">No sources configured.</li>';
+  } catch {
+    els.sourcesList.innerHTML = '<li class="reports-empty">Could not load sites.json.</li>';
+  }
+}
+
+async function exportSourcesConfig() {
+  try {
+    const cfg = await fetchSitesConfig();
+    downloadBlob(new Blob([JSON.stringify(cfg, null, 2)], { type: "application/json" }), "sites.json");
+  } catch (err) {
+    alert("Could not export sources config: " + err.message);
+  }
+}
+
 // ---------- export / import ----------
 
 function downloadBlob(blob, filename) {
@@ -630,6 +687,212 @@ function mergeTagMaps(a, b) {
     out[url] = [...new Set([...(out[url] || []), ...names])];
   }
   return out;
+}
+
+// ---------- ask your archive (retrieval + AI Q&A) ----------
+
+const STOPWORDS = new Set([
+  "the", "and", "for", "are", "was", "were", "with", "that", "this", "have",
+  "has", "what", "when", "where", "how", "why", "who", "did", "does", "about",
+  "over", "last", "years", "year", "into", "from", "their", "its", "been",
+  "there", "which", "will", "would", "could", "than", "then", "them", "they",
+]);
+
+function loadAiSettings() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(AI_SETTINGS_KEY));
+    return {
+      provider: parsed.provider || "groq",
+      groqKey: parsed.groqKey || "",
+      geminiKey: parsed.geminiKey || "",
+      localUrl: parsed.localUrl || "http://localhost:1234/v1/chat/completions",
+      localModel: parsed.localModel || "",
+    };
+  } catch {
+    return { provider: "groq", groqKey: "", geminiKey: "", localUrl: "http://localhost:1234/v1/chat/completions", localModel: "" };
+  }
+}
+
+function saveAiSettings(settings) {
+  localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function wireAskPanel() {
+  const settings = loadAiSettings();
+  els.askProvider.value = settings.provider;
+  applyProviderVisibility(settings.provider);
+  els.askApiKey.value = settings.provider === "gemini" ? settings.geminiKey : settings.groqKey;
+  els.askLocalUrl.value = settings.localUrl;
+  els.askLocalModel.value = settings.localModel;
+
+  els.askBtn.addEventListener("click", () => {
+    els.askPanel.classList.toggle("hidden");
+    if (!els.askPanel.classList.contains("hidden")) els.askInput.focus();
+  });
+  els.askCloseBtn.addEventListener("click", () => els.askPanel.classList.add("hidden"));
+  els.askSettingsBtn.addEventListener("click", () => els.askSettings.classList.toggle("hidden"));
+
+  els.askProvider.addEventListener("change", () => {
+    const s = loadAiSettings();
+    s.provider = els.askProvider.value;
+    saveAiSettings(s);
+    applyProviderVisibility(s.provider);
+    els.askApiKey.value = s.provider === "gemini" ? s.geminiKey : s.groqKey;
+  });
+  els.askApiKey.addEventListener("input", () => {
+    const s = loadAiSettings();
+    if (s.provider === "gemini") s.geminiKey = els.askApiKey.value;
+    else s.groqKey = els.askApiKey.value;
+    saveAiSettings(s);
+  });
+  els.askLocalUrl.addEventListener("input", () => {
+    const s = loadAiSettings();
+    s.localUrl = els.askLocalUrl.value;
+    saveAiSettings(s);
+  });
+  els.askLocalModel.addEventListener("input", () => {
+    const s = loadAiSettings();
+    s.localModel = els.askLocalModel.value;
+    saveAiSettings(s);
+  });
+
+  els.askForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const question = els.askInput.value.trim();
+    if (!question) return;
+    els.askInput.value = "";
+    handleAskQuestion(question);
+  });
+}
+
+function applyProviderVisibility(provider) {
+  const isLocal = provider === "local";
+  els.askKeyRow.classList.toggle("hidden", isLocal);
+  els.askLocalUrlRow.classList.toggle("hidden", !isLocal);
+  els.askLocalModelRow.classList.toggle("hidden", !isLocal);
+}
+
+// Broad-recall retrieval: OR every meaningful word in the question against
+// title/body/keywords, ranked by FTS5's bm25-based `rank`. This is deliberately
+// looser than the main search box (which defaults to AND) since the goal here
+// is "don't miss anything relevant", not precision — the LLM does the
+// precision work afterwards by only using what's actually relevant.
+function retrieveForQuestion(question, limit = 12) {
+  const words = (question.toLowerCase().match(/[a-z0-9']{3,}/g) || []).filter((w) => !STOPWORDS.has(w));
+  const terms = [...new Set(words)].slice(0, 12);
+  if (!terms.length) return [];
+  const ftsQuery = terms.map((t) => `"${t.replaceAll('"', '')}"`).join(" OR ");
+  try {
+    return queryAll(
+      state.db,
+      `SELECT a.id, a.title, a.site_name, a.published_at, a.url, a.excerpt, a.content_text,
+              (SELECT GROUP_CONCAT(t.name, ', ') FROM article_tags at2 JOIN tags t ON t.id = at2.tag_id WHERE at2.article_id = a.id) AS tags
+       FROM articles_fts JOIN articles a ON a.id = articles_fts.rowid
+       WHERE articles_fts MATCH $q ORDER BY rank LIMIT $limit`,
+      { $q: ftsQuery, $limit: limit }
+    );
+  } catch {
+    return [];
+  }
+}
+
+function buildAskPrompt(question, articles) {
+  const corpus = articles
+    .map((a, i) => {
+      const date = (a.published_at || "").slice(0, 10) || "unknown date";
+      const text = (a.content_text || a.excerpt || "").slice(0, 900);
+      return `[${i + 1}] (${date}) ${a.title} — ${a.site_name}${a.tags ? ` | tags: ${a.tags}` : ""}\n${text}`;
+    })
+    .join("\n\n---\n\n");
+  return [
+    "Answer the question using ONLY the articles below from the user's personal archive. Cite sources",
+    "inline like [1], [2] for every claim. If the articles don't contain enough information to answer",
+    "well, say so plainly instead of guessing or using outside knowledge.",
+    "",
+    "ARTICLES:",
+    "",
+    corpus,
+    "",
+    `QUESTION: ${question}`,
+  ].join("\n");
+}
+
+async function callProvider(prompt) {
+  const s = loadAiSettings();
+  if (s.provider === "groq") {
+    if (!s.groqKey) throw new Error("Add a Groq API key in Ask settings (⚙) first.");
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${s.groqKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "openai/gpt-oss-20b", messages: [{ role: "user", content: prompt }], temperature: 0.3 }),
+    });
+    if (!res.ok) throw new Error(`Groq error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || "(no answer returned)";
+  }
+
+  if (s.provider === "gemini") {
+    if (!s.geminiKey) throw new Error("Add a Gemini API key in Ask settings (⚙) first.");
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${encodeURIComponent(s.geminiKey)}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
+    );
+    if (!res.ok) throw new Error(`Gemini error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const data = await res.json();
+    return data.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "(no answer returned)";
+  }
+
+  // Local: any OpenAI-compatible server (LM Studio, Ollama's OpenAI-compat
+  // mode, etc). We can't assume every local runtime exposes this, so the
+  // URL/model are user-configured rather than guessed.
+  if (!s.localUrl) throw new Error("Set your local server URL in Ask settings (⚙) first.");
+  const res = await fetch(s.localUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: s.localModel || "local-model", messages: [{ role: "user", content: prompt }], temperature: 0.3 }),
+  });
+  if (!res.ok) throw new Error(`Local model error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || "(no answer returned)";
+}
+
+function appendAskMessage(role, html) {
+  const div = document.createElement("div");
+  div.className = `ask-msg ${role}`;
+  div.innerHTML = html;
+  els.askMessages.appendChild(div);
+  els.askMessages.scrollTop = els.askMessages.scrollHeight;
+  return div;
+}
+
+async function handleAskQuestion(question) {
+  document.querySelector(".ask-empty")?.remove();
+  appendAskMessage("user", escapeHtml(question));
+  const loading = appendAskMessage("assistant loading", '<span class="ask-loading">Searching the archive…</span>');
+
+  const articles = retrieveForQuestion(question);
+  if (articles.length === 0) {
+    loading.className = "ask-msg assistant";
+    loading.innerHTML = "Couldn't find any archived articles matching that question.";
+    return;
+  }
+
+  loading.querySelector(".ask-loading").textContent = `Found ${articles.length} relevant article(s), asking the AI…`;
+
+  try {
+    const prompt = buildAskPrompt(question, articles);
+    const answer = await callProvider(prompt);
+    const sourcesHtml = articles
+      .map((a, i) => `<li>[${i + 1}] <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(a.title)}</a> — ${escapeHtml(a.site_name)}, ${formatDate(a.published_at)}</li>`)
+      .join("");
+    loading.className = "ask-msg assistant";
+    loading.innerHTML = `${escapeHtml(answer).replaceAll("\n", "<br>")}
+      <details class="ask-sources"><summary>${articles.length} source(s)</summary><ol>${sourcesHtml}</ol></details>`;
+  } catch (err) {
+    loading.className = "ask-msg assistant error";
+    loading.textContent = "Error: " + err.message;
+  }
+  els.askMessages.scrollTop = els.askMessages.scrollHeight;
 }
 
 // ---------- misc ----------

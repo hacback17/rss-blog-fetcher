@@ -105,6 +105,51 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       keyword tags, never a crash). Documented the one-off re-tag command
       to upgrade any keyword-tagged articles later.
 
+## Done — v3 (robots toggle, RSS, keywords, Ask/RAG, add-site issue-ops)
+- [x] **robots.txt toggle**: respected by default; `respectRobotsTxt: false`
+      (global or per-site in `sites.json`) opts out explicitly — left as the
+      user's informed choice rather than decided for them.
+- [x] **RSS/Atom as a discovery source** (`scraper/src/rss.js`): merged into
+      the same candidate pipeline as sitemap URLs — a feed only needs to
+      list links, every one still gets full Readability extraction, so this
+      directly covers the original "RSS only gives snippets" complaint for
+      sites that do publish a feed.
+- [x] **Keywords**: added a second, uncapped LLM-extracted field alongside
+      the capped tags — specific entities/terms for search/retrieval
+      precision, indexed into FTS5. Required an FTS5 schema migration
+      (drop/recreate + rebuild, tracked via a new `schema_meta` table) since
+      virtual tables can't just get an ALTER TABLE ADD COLUMN. Verified
+      against the real 759→983-article database: migration ran cleanly,
+      integrity check passed, FTS row count matched, search still worked.
+- [x] **"Ask your archive"** — client-side RAG chat: FTS5 retrieval (broad
+      OR-based recall) → prompt with citation instructions → user's choice
+      of Groq / Gemini / a local OpenAI-compatible server (LM Studio/Ollama-
+      style — flagged that this assumes the local tool exposes that kind of
+      server, since I couldn't confirm "Locally AI" specifically does).
+      Verified direct browser→Groq and browser→Gemini calls aren't CORS-
+      blocked (checked for real, not assumed) before building this
+      architecture. Settings/keys live only in browser localStorage.
+- [x] **Sources panel** — lists every configured site's exact sitemap/RSS
+      URLs (fetched from a `data/sites.json` copy the deploy step publishes
+      alongside the database), plus a one-click config export.
+- [x] **"Add a source" issue-ops flow**: an Issue Form
+      (`.github/ISSUE_TEMPLATE/add-site.yml`) + workflow
+      (`add-site.yml`) that parses the issue, appends to `sites.json`,
+      commits, runs an immediate scoped first-scrape (`run.js --site=<id>`),
+      comments the result back, closes the issue, and redeploys — "add a
+      site → pulls instantly → joins the daily run" with no backend.
+      Restricted to repo owner/collaborators (it spends API quota and
+      commits to the repo) and both shell-injection points (issue body,
+      user-entered display name) routed through env vars rather than direct
+      YAML interpolation. Factored the "publish to Pages" steps into a
+      shared reusable workflow (`deploy.yml`) since three workflows now need
+      them.
+- [x] Tested live end-to-end: schema migration on the real DB, `--site=`
+      CLI filter (including the "no such site" error path), the issue-body
+      parser against a realistic GitHub Issue Form rendering (including
+      sitemap auto-discovery), and the full scraper run with the new
+      robots-toggle/RSS/keywords code paths — all clean, no regressions.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →
@@ -132,3 +177,10 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
 - Read/unread and manually-added tags live per-browser (localStorage), not
   auto-synced across devices — by design, given the no-backend constraint;
   see README for the export/import and `apply-overlay.js` sync path.
+- "Ask your archive" local-model option assumes an OpenAI-compatible local
+  server (LM Studio/Ollama-style). Couldn't confirm whether "Locally AI"
+  specifically exposes one — if it doesn't, that option has nothing to
+  connect to and Groq/Gemini are the working paths today.
+- The "Add a source" issue flow only runs for the repo owner/collaborators,
+  by design (it spends API quota and commits to the repo on anyone's say-so
+  otherwise, if the repo is public).

@@ -1,0 +1,100 @@
+name: Add a source (from issue)
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+  pages: write
+  id-token: write
+
+jobs:
+  add-site:
+    # Restricted to repo owner/collaborators — this workflow commits to the
+    # repo and uses the GROQ_API_KEY secret, so it shouldn't run for
+    # issues filed by arbitrary members of the public on a public repo.
+    if: >
+      contains(github.event.issue.labels.*.name, 'add-site') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install scraper dependencies
+        working-directory: scraper
+        run: npm ci --no-audit --no-fund
+
+      - name: Parse issue and add site to sites.json
+        id: parse
+        working-directory: scraper
+        env:
+          # Indirected through an env var (not interpolated into the script
+          # text) so arbitrary issue-body content can't break/inject into
+          # the shell command.
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: echo "$ISSUE_BODY" | node --experimental-sqlite src/parse-issue-and-add-site.js
+
+      - name: Commit sites.json
+        env:
+          SITE_NAME: ${{ steps.parse.outputs.site_name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          git config user.name "blog-archiver-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add scraper/config/sites.json
+          git commit -m "chore: add source $SITE_NAME (#$ISSUE_NUMBER)"
+          git push
+
+      - name: First scrape for the new site
+        working-directory: scraper
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SITE_ID: ${{ steps.parse.outputs.site_id }}
+        run: npm run run -- --site="$SITE_ID"
+
+      - name: Read run result
+        id: result
+        working-directory: scraper
+        env:
+          SITE_ID: ${{ steps.parse.outputs.site_id }}
+        run: node --experimental-sqlite src/print-site-run-summary.js "$SITE_ID"
+
+      - name: Commit scraped data
+        env:
+          SITE_NAME: ${{ steps.parse.outputs.site_name }}
+        run: |
+          git config user.name "blog-archiver-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if git diff --quiet -- data/blogs.db; then
+            echo "No new data."
+          else
+            git add data/blogs.db
+            git commit -m "chore: first scrape for $SITE_NAME"
+            git push
+          fi
+
+      - name: Comment and close issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SITE_NAME: ${{ steps.parse.outputs.site_name }}
+          SITE_ID: ${{ steps.parse.outputs.site_id }}
+          SUMMARY: ${{ steps.result.outputs.summary }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Added **$SITE_NAME** (id \`$SITE_ID\`) to \`scraper/config/sites.json\` and ran its first scrape: $SUMMARY
+
+          It'll join the daily scheduled run from now on. The live site will update in a few minutes once Pages redeploys."
+          gh issue close "$ISSUE_NUMBER"
+
+  deploy:
+    needs: add-site
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      pages: write
+      id-token: write

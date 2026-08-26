@@ -55,26 +55,7 @@ jobs:
 
   deploy:
     needs: scrape
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-
-      - name: Assemble site
-        run: |
-          mkdir -p _site/data _site/reports
-          cp -r web/* _site/
-          cp data/blogs.db _site/data/blogs.db
-          if [ -d reports ]; then cp -r reports/* _site/reports/; fi
-          if [ ! -f _site/reports/index.json ]; then echo "[]" > _site/reports/index.json; fi
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-      - id: deployment
-        uses: actions/deploy-pages@v4
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      pages: write
+      id-token: write

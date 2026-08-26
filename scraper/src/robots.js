@@ -61,3 +61,22 @@ export async function fetchRobotsRules(baseUrl, userAgent, timeoutMs) {
 export function isPathAllowed(rules, pathname) {
   return !rules.disallow.some((rule) => pathname.startsWith(rule));
 }
+
+// Used by the "add a source" issue automation when no sitemap URL is given:
+// most sites advertise their sitemap(s) via "Sitemap:" lines in robots.txt.
+export async function discoverSitemapUrls(baseUrl, userAgent, timeoutMs) {
+  const robotsUrl = new URL("/robots.txt", baseUrl).toString();
+  try {
+    const res = await fetchWithTimeout(robotsUrl, { headers: { "User-Agent": userAgent } }, timeoutMs);
+    if (!res.ok) return [];
+    const text = await res.text();
+    return text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => /^sitemap:/i.test(l))
+      .map((l) => l.slice(l.indexOf(":") + 1).trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}

@@ -23,6 +23,8 @@ permissions:
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    outputs:
+      report_added: ${{ steps.commit.outputs.added }}
     steps:
       - uses: actions/checkout@v4
 
@@ -54,13 +56,24 @@ jobs:
           npm run analyze -- "${ARGS[@]}"
 
       - name: Commit report
+        id: commit
         run: |
           git config user.name "blog-archiver-bot"
           git config user.email "actions@users.noreply.github.com"
           git add reports/
           if git diff --cached --quiet; then
             echo "No report produced."
+            echo "added=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "chore: pattern analysis report $(date -u +'%Y-%m-%d')"
             git push
+            echo "added=true" >> "$GITHUB_OUTPUT"
           fi
+
+  deploy:
+    needs: analyze
+    if: needs.analyze.outputs.report_added == 'true'
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      pages: write
+      id-token: write

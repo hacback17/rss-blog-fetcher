@@ -1,17 +1,24 @@
 # Blog Archive
 
-A self-hosted tool that finds a site's sitemap, extracts the **full text** of
-every blog post/article on it (not RSS snippets), stores everything in a
-searchable local database, and shows it in a web reader. Runs automatically
-once a day on GitHub Actions — no laptop required.
+A self-hosted tool that finds a site's sitemap (or RSS feed), extracts the
+**full text** of every blog post/article on it (not snippets), stores
+everything in a searchable, taggable local database, and shows it in a web
+reader with an AI Q&A chat over your own data. Runs automatically once a day
+on GitHub Actions — no laptop required.
 
 ## How it works
 
 ```
-scraper/   Node.js script: sitemap discovery → full-article extraction → SQLite
-data/      blogs.db — the SQLite database (committed to the repo by the Action)
-web/       static reader UI, runs entirely in the browser (no backend)
-.github/workflows/scrape-and-deploy.yml   daily cron + manual "Run workflow" button
+scraper/                Node.js: sitemap/RSS discovery → full-article extraction → SQLite → auto-tag
+data/blogs.db            the SQLite database (committed to the repo by the Action)
+reports/                 Markdown pattern-analysis reports (see "Intelligence-style pattern analysis")
+web/                     static reader + Ask-your-archive UI, runs entirely in the browser (no backend)
+.github/ISSUE_TEMPLATE/add-site.yml       the "Add a source" issue form
+.github/workflows/
+  scrape-and-deploy.yml    daily cron + manual "Run workflow" button
+  add-site.yml             turns an "Add a source" issue into a live source
+  analyze-patterns.yml     on-demand Gemini pattern analysis
+  deploy.yml               shared "publish to Pages" step the other three call
 ```
 
 **No server, ever.** The GitHub Action scrapes new articles, writes them into
@@ -30,17 +37,27 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
 
 ## Features
 
-- **Tags, manual + automatic.** Every article is auto-tagged (up to 5 tags)
-  during scraping by an LLM call (Groq), which is told to *reuse* existing
-  tags rather than invent near-duplicates — see "Auto-tagging" below. You can
-  also add/remove your own tags per article in the reader pane. Tags are a
-  real many-to-many join (`tags` + `article_tags` tables), never duplicated
-  per-article data. Click any tag in the left sidebar to filter.
+- **Tags + keywords, manual + automatic.** Every article gets up to 5 broad
+  category **tags** (e.g. "Water Crisis", "Data Centre") auto-assigned by an
+  LLM call during scraping, told to *reuse* existing tags rather than invent
+  near-duplicates — this is what keeps the sidebar a small set of real
+  categories instead of one bespoke tag per article. Separately, it also
+  extracts up to 12 specific, uncapped **keywords** (named entities, places,
+  projects, technical terms) purely to sharpen search and the "Ask your
+  archive" retrieval below — see "Auto-tagging" for why these are two
+  different, differently-capped things. You can also add/remove your own
+  tags per article in the reader pane. Tags are a real many-to-many join
+  (`tags` + `article_tags` tables), never duplicated per-article data. Click
+  any tag in the left sidebar to filter.
 - **Read/unread.** Opening an article marks it read (dot disappears from the
   list); a button in the reader pane lets you mark it unread again. "Unread
   only" checkbox in the toolbar.
 - **Light/dark toggle.** The 🌓 button in the header cycles
   system → light → dark, remembered per-browser.
+- **Ask your archive** — an AI Q&A chat over your own data, see "Ask your
+  archive" below.
+- **Sources panel** — lists every configured site with the exact sitemap/RSS
+  URLs it's using, and an export button. See "Adding a source".
 - **Export/import**, see "Portability" below.
 - **Pattern analysis**, see "Intelligence-style pattern analysis" below.
 
@@ -48,10 +65,19 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
 
 `scraper/src/autotag.js` calls Groq (`GROQ_API_KEY`) with the article's title
 + excerpt and the list of tags already used elsewhere in the archive, asking
-it to pick up to 5 tags and strongly prefer reusing an existing one — this is
-what keeps the tag list a small set of real categories (e.g. "Water Crisis",
-"Air Pollution", "Data Centre") instead of one bespoke tag per article. If no
-`GROQ_API_KEY` is set, it falls back to a small offline keyword-matching
+it for two different things in one call:
+
+- **tags** — up to 5, told to strongly prefer reusing an existing tag. This
+  is what keeps the tag list small and reusable instead of exploding into a
+  bespoke tag per article — the original design goal for the grouping UI.
+- **keywords** — up to 12, specific rather than broad (people, orgs, places,
+  projects, laws, species...). These aren't capped tightly like tags because
+  they serve a different purpose: precision search and retrieval quality for
+  "Ask your archive", where more specific signal only helps. They never show
+  up as their own grouping UI, so they can't cause the "lots of small
+  groups" problem tags were capped to avoid.
+
+If no `GROQ_API_KEY` is set, it falls back to a small offline keyword-matching
 tagger instead (less precise, but the feature still works with zero setup).
 
 Get a free key at [console.groq.com/keys](https://console.groq.com/keys),
@@ -147,6 +173,52 @@ cd scraper
 GEMINI_API_KEY=... npm run analyze -- --tag="Water Crisis" --since=2024-01-01
 ```
 
+## Ask your archive
+
+The 💬 Ask button opens a chat panel that answers questions using your
+archived articles as its only source of truth:
+
+1. Your question is turned into a broad full-text search (title, body, and
+   the `keywords` column) run **locally in your browser** against the SQLite
+   database already loaded — instant, no network call.
+2. The top ~12 matches are bundled into a prompt telling the model to answer
+   *only* from those articles and cite them as `[1]`, `[2]`, etc.
+3. That prompt goes to whichever AI provider you've configured (⚙ in the
+   panel) — the answer and its sources are shown in the chat.
+
+**Three provider options**, all configured client-side (⚙ settings, stored
+only in your browser's `localStorage`, sent directly from your browser to
+that provider — never touches the repo or any server of ours):
+
+- **Groq** — paste a free key from [console.groq.com/keys](https://console.groq.com/keys).
+- **Gemini** — paste a free key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+- **Local** — point it at any locally-running **OpenAI-compatible** server
+  (the `/v1/chat/completions` endpoint that tools like [LM Studio](https://lmstudio.ai)
+  or [Ollama](https://ollama.com) (in OpenAI-compat mode) expose), plus the
+  model name it's serving. This keeps everything fully offline and free —
+  no API key, no per-query cost, and your questions never leave your Mac.
+  **Note:** this needs the local tool to actually expose that kind of local
+  network server. LM Studio and Ollama do; if you're using something like
+  Locally AI that's built as a self-contained app without one, this option
+  won't have anything to connect to — in that case Groq's free tier is the
+  easiest path to something working today.
+
+Both Groq's and Gemini's APIs allow direct browser calls (verified this
+directly — no proxy/backend needed, which is what makes a fully static site
+able to do this at all).
+
+## Respecting robots.txt
+
+Off by default in the sense that matters: **`robots.txt` is respected unless
+you explicitly turn that off**, globally (`respectRobotsTxt` in
+`scraper/config/sites.json`) or per-site. This is left as your call rather
+than silently decided — you know the sites you're archiving and your own
+reasons better than a default can. If you do turn it off for a site, that's
+an informed choice you're making, not something the tool nudges you toward;
+worth knowing that some sites' terms of service independently restrict
+automated access regardless of what robots.txt says, which turning this flag
+off doesn't change.
+
 ## A note on long-term storage (years of data)
 
 At the current pace (~500 articles ≈ 12MB), even 100,000 articles over many
@@ -170,6 +242,11 @@ not a reason to add complexity today.
 4. Push to `main` once, or click **Run workflow** on the
    "Scrape blogs and deploy archive" Action tab to run it manually the first
    time.
+5. *(Optional, can do anytime)* Add `GROQ_API_KEY` and/or `GEMINI_API_KEY` as
+   repo secrets — Settings → Secrets and variables → Actions — to enable
+   real auto-tagging and the pattern-analysis workflow. Nothing breaks
+   without them (auto-tagging falls back to offline keyword-matching), it's
+   just lower quality until they're set.
 
 After that, it runs automatically every day at 03:00 UTC. You can also click
 **Run workflow** any time you want fresh data immediately — the scraper skips
@@ -215,9 +292,25 @@ PIB `AllFactsheet.aspx` (dynamic page, no real sitemap),
 indiaenvironmentportal.org.in (its `robots.txt` disallows all crawling —
 respected), Reporters' Collective project page (single page, not a blog).
 
-### Adding a new site
+### Adding a source
 
-Add an entry to the `sites` array in `scraper/config/sites.json`:
+**Option A — from the repo's Issues tab (recommended, no laptop needed):**
+open a new issue using the **"Add a source"** template. Fill in the name,
+base URL, and optionally a sitemap/RSS URL (leave both blank and it tries to
+auto-discover a sitemap from the site's `robots.txt`). Submitting it:
+
+1. Adds the site to `scraper/config/sites.json` and commits it.
+2. Immediately runs a first scrape for just that site (doesn't wait for the
+   next scheduled run).
+3. Comments the result on the issue and closes it.
+4. Redeploys the live site.
+
+It'll be part of the regular daily run from then on. (Restricted to the repo
+owner/collaborators, since it commits to the repo and spends API quota —
+see `.github/workflows/add-site.yml` if you want to loosen that.)
+
+**Option B — edit the config directly:** add an entry to the `sites` array in
+`scraper/config/sites.json`:
 
 ```json
 {
@@ -225,22 +318,36 @@ Add an entry to the `sites` array in `scraper/config/sites.json`:
   "name": "Display Name",
   "baseUrl": "https://example.com",
   "sitemapUrls": ["https://example.com/sitemap.xml"],
+  "rssUrls": ["https://example.com/feed"],
   "includePathPrefixes": ["/blog/"],
-  "includeKeywords": ["optional", "url-slug", "keyword", "filter"]
+  "includeKeywords": ["optional", "url-slug", "keyword", "filter"],
+  "respectRobotsTxt": false
 }
 ```
 
-`includePathPrefixes` / `includeKeywords` are optional — omit them to pull
-everything the sitemap lists. If a site's sitemap mixes articles with other
-page types (common on WordPress/Drupal sites — category pages, author pages,
-static pages), check `curl https://example.com/sitemap.xml` first and point
-`sitemapUrls` at the specific child sitemap(s) that only contain posts
-(commonly named `post-sitemap.xml`, `articles.xml`, `news-sitemap.xml`, etc.),
-the same way CSE India and Mongabay are configured above.
+`sitemapUrls`, `rssUrls`, `includePathPrefixes`, `includeKeywords`, and
+`respectRobotsTxt` are all optional. Provide `sitemapUrls` and/or `rssUrls`
+— **RSS/Atom feeds work as a discovery source too**: the feed only needs to
+list article links (even if it carries just snippets), since every URL still
+gets run through the same full-Readability-extraction pipeline as sitemap
+URLs — this is exactly the sites the original RSS-reader pain point was
+about, sites that *do* publish a feed but only ever put snippets in it.
+
+If a site's sitemap mixes articles with other page types (common on
+WordPress/Drupal sites — category pages, author pages, static pages), check
+`curl https://example.com/sitemap.xml` first and point `sitemapUrls` at the
+specific child sitemap(s) that only contain posts (commonly named
+`post-sitemap.xml`, `articles.xml`, `news-sitemap.xml`, etc.), the same way
+CSE India and Mongabay are configured above.
+
+The web UI's **🔗 Sources** panel always shows exactly what's configured
+right now (name + every sitemap/RSS URL in use), with a one-click export of
+the underlying `sites.json`.
 
 ## Politeness / not burdening servers
 
-- Each site's `robots.txt` is fetched and respected (`Disallow` rules).
+- Each site's `robots.txt` is fetched and respected (`Disallow` rules) by
+  default — see "Respecting robots.txt" for the opt-out.
 - Requests go out with a delay (default 700ms) and low concurrency (default 2).
 - Articles already stored are never re-fetched unless the sitemap's
   `<lastmod>` for that URL changed.

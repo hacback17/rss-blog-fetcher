@@ -1,5 +1,7 @@
 {
   "userAgent": "BlogArchiverBot/1.0 (+personal research archive; contact: shreyatalukdar30@gmail.com)",
+  "_comment_respectRobotsTxt": "Respected by default. Set to false here (globally) or on an individual site to bypass — an explicit, informed choice, not a silent default. See README 'Respecting robots.txt'.",
+  "respectRobotsTxt": true,
   "requestDelayMs": 700,
   "concurrency": 2,
   "maxNewPerSiteRun": 80,

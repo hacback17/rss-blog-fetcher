@@ -1,0 +1,64 @@
+name: Add a source
+description: Add a new blog/site to the archive. It scrapes an initial batch automatically, then joins the daily run.
+title: "Add site: "
+labels: ["add-site"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This pulls the site's sitemap (or RSS feed) and does a first scrape automatically when you
+        submit this issue. After that it's part of the regular daily run. The issue closes itself with
+        a summary once done.
+  - type: input
+    id: name
+    attributes:
+      label: Display name
+      placeholder: e.g. Example News
+    validations:
+      required: true
+  - type: input
+    id: base_url
+    attributes:
+      label: Base URL
+      placeholder: https://example.com
+    validations:
+      required: true
+  - type: input
+    id: sitemap_url
+    attributes:
+      label: Sitemap URL (optional — leave blank to auto-discover from robots.txt)
+      placeholder: https://example.com/sitemap.xml
+    validations:
+      required: false
+  - type: input
+    id: rss_url
+    attributes:
+      label: RSS/Atom feed URL (optional)
+      placeholder: https://example.com/feed
+    validations:
+      required: false
+  - type: input
+    id: include_path_prefixes
+    attributes:
+      label: Only include URLs under these path(s) (optional, comma-separated)
+      placeholder: /blog/, /news/
+    validations:
+      required: false
+  - type: input
+    id: include_keywords
+    attributes:
+      label: Only include URLs containing these keyword(s) (optional, comma-separated)
+      placeholder: climate, environment
+    validations:
+      required: false
+  - type: dropdown
+    id: respect_robots
+    attributes:
+      label: Respect robots.txt for this site?
+      description: Off by default and recommended. Only turn this off if you've made an informed decision to bypass it for this site.
+      options:
+        - "Yes (recommended)"
+        - "No — bypass robots.txt for this site"
+      default: 0
+    validations:
+      required: true

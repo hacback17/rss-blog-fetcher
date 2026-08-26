@@ -12,6 +12,8 @@
       <div class="topbar-row">
         <h1>Blog Archive</h1>
         <div class="topbar-actions">
+          <button id="ask-btn" title="Ask your archive (AI Q&amp;A)">💬 Ask</button>
+          <button id="sources-btn" title="Configured sources">🔗 Sources</button>
           <button id="reports-btn" title="Pattern analysis reports">📊 Reports</button>
           <button id="theme-toggle" title="Toggle light/dark theme" aria-label="Toggle theme">🌙</button>
           <button id="data-menu-btn" title="Export / import data">⇅ Data</button>
@@ -41,6 +43,51 @@
         <li><code>"carbon capture"</code> — exact phrase</li>
         <li>Plain words next to each other are AND-ed by default.</li>
       </ul>
+    </div>
+
+    <div id="sources-menu" class="data-menu hidden">
+      <strong>Configured sources</strong>
+      <ul id="sources-list" class="sources-list"></ul>
+      <button id="export-sources-btn">⬇ Export sources config (sites.json)</button>
+      <p class="data-menu-hint">
+        To add a new site: open a "Add a source" issue on the repo's Issues tab — it pulls the first
+        batch automatically, then joins the daily run. See README "Adding a source".
+      </p>
+    </div>
+
+    <div id="ask-panel" class="ask-panel hidden">
+      <div class="ask-header">
+        <strong>Ask your archive</strong>
+        <button id="ask-settings-btn" title="AI provider settings">⚙</button>
+        <button id="ask-close-btn" title="Close">×</button>
+      </div>
+      <div id="ask-settings" class="ask-settings hidden">
+        <label>Provider
+          <select id="ask-provider">
+            <option value="groq">Groq (fast, free tier)</option>
+            <option value="gemini">Gemini (free tier)</option>
+            <option value="local">Local (LM Studio / Ollama / etc, OpenAI-compatible)</option>
+          </select>
+        </label>
+        <label id="ask-key-row">API key <input type="password" id="ask-api-key" placeholder="sk-... (stored only in this browser)" /></label>
+        <label id="ask-local-url-row" class="hidden">Local server URL
+          <input type="text" id="ask-local-url" placeholder="http://localhost:1234/v1/chat/completions" />
+        </label>
+        <label id="ask-local-model-row" class="hidden">Model name <input type="text" id="ask-local-model" placeholder="e.g. llama-3.1-8b" /></label>
+        <p class="data-menu-hint">
+          Keys/settings are saved only in this browser's local storage and sent directly from your
+          browser to the provider you choose — never stored in the repo.
+        </p>
+      </div>
+      <div id="ask-messages" class="ask-messages">
+        <p class="ask-empty">Ask a question about what's in the archive — e.g. "what's changed about India's
+          water crisis over the last two years?" It searches the archive first, then asks the AI to
+          answer using only what it finds, with sources.</p>
+      </div>
+      <form id="ask-form" class="ask-form">
+        <input type="text" id="ask-input" placeholder="Ask a question…" autocomplete="off" />
+        <button type="submit">Ask</button>
+      </form>
     </div>
 
     <div id="reports-menu" class="data-menu hidden">
