@@ -1,0 +1,109 @@
+{
+  "userAgent": "BlogArchiverBot/1.0 (+personal research archive; contact: shreyatalukdar30@gmail.com)",
+  "requestDelayMs": 700,
+  "concurrency": 2,
+  "maxNewPerSiteRun": 80,
+  "requestTimeoutMs": 15000,
+  "sites": [
+    {
+      "id": "downtoearth",
+      "name": "Down To Earth",
+      "baseUrl": "https://www.downtoearth.org.in",
+      "sitemapUrls": [
+        "https://www.downtoearth.org.in/sitemap.xml"
+      ]
+    },
+    {
+      "id": "cseindia",
+      "name": "Centre for Science and Environment (CSE)",
+      "baseUrl": "https://www.cseindia.org",
+      "sitemapUrls": [
+        "https://www.cseindia.org/articles.xml"
+      ],
+      "note": "cseindia.org/sitemap.xml also lists pages.xml and staticpages.xml (org/programme pages, not articles) — deliberately pointed only at articles.xml."
+    },
+    {
+      "id": "mongabay-india",
+      "name": "Mongabay India",
+      "baseUrl": "https://india.mongabay.com",
+      "sitemapUrls": [
+        "https://india.mongabay.com/post-sitemap.xml",
+        "https://india.mongabay.com/post-sitemap2.xml",
+        "https://india.mongabay.com/post-sitemap3.xml",
+        "https://india.mongabay.com/post-sitemap4.xml",
+        "https://india.mongabay.com/post-sitemap5.xml",
+        "https://india.mongabay.com/short-article-sitemap.xml"
+      ],
+      "note": "sitemap_index.xml also lists page/video/podcast/tag/author sitemaps (not articles) — deliberately pointed only at the post sitemaps."
+    },
+    {
+      "id": "indianexpress",
+      "name": "Indian Express (climate/environment)",
+      "baseUrl": "https://indianexpress.com",
+      "sitemapUrls": [
+        "https://indianexpress.com/news-sitemap.xml"
+      ],
+      "includeKeywords": [
+        "climate",
+        "environment",
+        "pollution",
+        "forest",
+        "wildlife",
+        "biodiversity",
+        "emission",
+        "monsoon",
+        "heatwave",
+        "glacier",
+        "renewable",
+        "deforestation",
+        "conservation"
+      ],
+      "note": "Best-effort: Indian Express article URLs don't reliably encode category, so this filters by keywords in the URL slug only. Some relevant articles may be missed."
+    },
+    {
+      "id": "thehindu-energy-environment",
+      "name": "The Hindu — Energy & Environment",
+      "baseUrl": "https://www.thehindu.com",
+      "sitemapUrls": [
+        "https://www.thehindu.com/sitemap/update/all.xml"
+      ],
+      "includePathPrefixes": [
+        "/sci-tech/energy-and-environment/"
+      ]
+    },
+    {
+      "id": "frontline-environment",
+      "name": "Frontline — Environment",
+      "baseUrl": "https://frontline.thehindu.com",
+      "sitemapUrls": [
+        "https://frontline.thehindu.com/sitemap/update/all.xml"
+      ],
+      "includePathPrefixes": [
+        "/environment/"
+      ]
+    }
+  ],
+  "excludedSites": [
+    {
+      "domain": "moef.gov.in/annual-reports",
+      "reason": "Listing of PDF reports, not HTML blog posts — needs a separate PDF-focused tool."
+    },
+    {
+      "domain": "globalforestwatch.org/dashboards/country/IND",
+      "reason": "JS data dashboard, not article content; no sitemap of articles exists."
+    },
+    {
+      "domain": "pib.gov.in/AllFactsheet.aspx",
+      "reason": "Dynamic ASPX listing with no real sitemap.xml (the URL returns a 'page not found' HTML page)."
+    },
+    {
+      "domain": "indiaenvironmentportal.org.in",
+      "reason": "robots.txt explicitly disallows all crawling (Disallow: /). Respected and skipped."
+    },
+    {
+      "domain": "reporters-collective.in/projects/forest-conservation-series",
+      "reason": "Single project landing page, not a sitemap-driven blog with many posts."
+    }
+  ],
+  "maxChildSitemapsPerRun": 20
+}

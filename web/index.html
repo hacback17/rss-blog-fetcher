@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Blog Archive</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <h1>Blog Archive</h1>
+      <div class="search-wrap">
+        <input id="search-input" type="text" placeholder='Search e.g. climate AND (water OR carbon) NOT "explained"' autocomplete="off" />
+        <button id="search-help-btn" title="Search syntax help" aria-label="Search syntax help">?</button>
+      </div>
+      <div class="meta-bar">
+        <select id="site-filter"><option value="">All sources</option></select>
+        <span id="result-count"></span>
+        <span id="db-status">Loading database…</span>
+      </div>
+    </header>
+
+    <div id="search-help" class="search-help hidden">
+      <strong>Search syntax</strong>
+      <ul>
+        <li><code>water</code> — matches articles containing "water"</li>
+        <li><code>climate AND carbon</code> — both terms must appear</li>
+        <li><code>climate OR carbon</code> — either term</li>
+        <li><code>water NOT carbon</code> — has "water" but not "carbon"</li>
+        <li><code>(climate OR forest) AND NOT pollution</code> — group with parentheses</li>
+        <li><code>"carbon capture"</code> — exact phrase</li>
+        <li>Plain words next to each other are AND-ed by default.</li>
+      </ul>
+    </div>
+
+    <main class="layout">
+      <section class="list-pane">
+        <ul id="article-list"></ul>
+        <div class="pager">
+          <button id="prev-page">← Newer</button>
+          <span id="page-label"></span>
+          <button id="next-page">Older →</button>
+        </div>
+      </section>
+
+      <section class="reader-pane" id="reader-pane">
+        <div class="reader-empty" id="reader-empty">Select an article to read it here.</div>
+        <article id="reader-article" class="hidden">
+          <a id="reader-source-link" href="#" target="_blank" rel="noopener noreferrer" class="reader-source"></a>
+          <h2 id="reader-title"></h2>
+          <div class="reader-byline">
+            <span id="reader-author"></span>
+            <span id="reader-date"></span>
+            <span id="reader-words"></span>
+          </div>
+          <div id="reader-body" class="reader-body"></div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="vendor/purify.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

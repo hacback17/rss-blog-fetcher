@@ -1,0 +1,76 @@
+name: Scrape blogs and deploy archive
+
+on:
+  schedule:
+    # 03:00 UTC = 08:30 IST — runs once a day automatically.
+    - cron: "0 3 * * *"
+  workflow_dispatch: {} # the manual "Run workflow" button for on-demand runs
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    outputs:
+      db_changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install scraper dependencies
+        working-directory: scraper
+        run: npm ci --no-audit --no-fund
+
+      - name: Run scraper
+        working-directory: scraper
+        run: npm run run
+
+      - name: Commit updated database
+        id: commit
+        run: |
+          git config user.name "blog-archiver-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if git diff --quiet -- data/blogs.db; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git add data/blogs.db
+            git commit -m "chore: daily scrape $(date -u +'%Y-%m-%d')"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: scrape
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/data
+          cp -r web/* _site/
+          cp data/blogs.db _site/data/blogs.db
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
