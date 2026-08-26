@@ -96,5 +96,6 @@ jobs:
     needs: add-site
     uses: ./.github/workflows/deploy.yml
     permissions:
+      contents: read
       pages: write
       id-token: write

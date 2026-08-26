@@ -75,5 +75,6 @@ jobs:
     if: needs.analyze.outputs.report_added == 'true'
     uses: ./.github/workflows/deploy.yml
     permissions:
+      contents: read
       pages: write
       id-token: write

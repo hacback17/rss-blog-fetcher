@@ -57,5 +57,6 @@ jobs:
     needs: scrape
     uses: ./.github/workflows/deploy.yml
     permissions:
+      contents: read
       pages: write
       id-token: write

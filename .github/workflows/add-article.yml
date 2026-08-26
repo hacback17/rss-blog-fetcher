@@ -73,5 +73,6 @@ jobs:
     if: needs.add-article.outputs.db_changed == 'true'
     uses: ./.github/workflows/deploy.yml
     permissions:
+      contents: read
       pages: write
       id-token: write
