@@ -12,11 +12,14 @@
     "remove-site": "node --experimental-sqlite src/remove-site.js",
     "apply-overlay": "node --experimental-sqlite src/apply-overlay.js",
     "analyze": "node --experimental-sqlite src/analyze-patterns.js",
-    "preview": "node src/preview.js"
+    "preview": "node src/preview.js",
+    "mcp": "node --experimental-sqlite src/mcp-server.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@mozilla/readability": "^0.5.0",
     "fast-xml-parser": "^4.4.1",
-    "jsdom": "^25.0.1"
+    "jsdom": "^25.0.1",
+    "zod": "^4.4.3"
   }
 }

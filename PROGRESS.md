@@ -349,11 +349,113 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       weekly-publishing feed daily just 6 cheap no-op checks, not 6x the
       load. Documented in README.
 
+## Done — v8 (graph hub/leaf redesign, recent searches, MCP server for local AI apps)
+- [x] **Graph visual overhaul.** Nodes now come in two visually distinct
+      kinds instead of one uniform style: **hub** nodes (topics/tags — purple,
+      `--accent2`) sized by degree (how many things connect to them, not raw
+      article count), and **leaf** nodes (individual articles — green,
+      `--accent`, fixed small size regardless of their own degree) which
+      always show their title, not just on hover. Increased repulsion
+      (3200→5200) and spring length (100→150), and added a real collision-
+      resolution pass (like d3-force's `forceCollide` — every tick, any
+      overlapping pair of circles is pushed apart by exactly their overlap,
+      not scaled by the alpha cooldown so it stays enforced even after
+      settling) so edges/nodes spread out rather than visually compressing
+      or overlapping. New `--accent2`/`--accent2-bg` CSS tokens added to all
+      three theme blocks (light, system-dark, explicit dark) so hub coloring
+      stays theme-aware. Verified live in the browser at both the 43-topic
+      top level and a 200-article drill-down: no overlapping circles at any
+      zoom.
+- [x] **Graph structure fix (same day, user feedback):** first version of
+      the article-level drill-down sub-clustered articles by *other* shared
+      tags (each qualifying secondary tag became its own hub). User reported
+      this produced "cluster inside cluster" when drilling in, which read as
+      confusing rather than Obsidian-like. **Redesigned to be strictly flat,
+      one level deep**: zooming into a tag now shows exactly one hub (that
+      tag) with every one of its articles spoking directly off it — like
+      Obsidian's local graph view for a single note/tag, not a nested tree.
+      `handleGraphNodeClick` now only drills further when `graphState.mode
+      === "tags"` (i.e. from the top level); the central hub inside an
+      article view is a no-op, not another drill-in target. Removed the
+      now-unused `buildIdInClause` helper and the secondary-tag grouping
+      query entirely — simpler code, and the hub's own label ("why are these
+      grouped: they all carry this tag") already answers the "why" without
+      needing sub-hubs. Verified live: zoomed into "Human Worth" (18
+      articles), confirmed a single central hub with 18 leaves spoking off
+      it and titles all visible, and confirmed clicking the central hub does
+      nothing (stays on the same flat view).
+- [x] **Graph spacing fix (same day, user feedback):** even after the
+      collision-resolution pass, nodes sat exactly edge-to-edge with zero
+      gap, which the user still read as "compressed." Root cause: the
+      collision padding was a flat 4px, invisible against a 32px-radius hub.
+      Replaced with padding that scales with node size (`8 + 0.6 *
+      min(radiusA, radiusB)`, so bigger nodes get more visible breathing
+      room), and further increased repulsion (5200→9000), spring length
+      (150→220), and reduced center-pull strength (0.012→0.007) so the whole
+      layout spreads out more before collision resolution even kicks in.
+      Verified live: the 43-topic view and a 104-article "Mining & Minerals"
+      hub-and-spoke both now show a clear visible gap between every circle,
+      at any zoom level.
+- [x] **Graph density/dragging fix (same day, user feedback):** dragging
+      "Legal & Governance" revealed the real problem — with only 43 broad
+      category tags, most pairs co-occur *somewhat*, so the top-level topic
+      graph was carrying a near-complete edge set (every tag linked to
+      nearly every other), which no amount of spacing tuning alone could
+      untangle, and made every node feel "hard to pull" since it was held by
+      30+ springs at once. Fixed at the source: **prune to each tag's
+      strongest 3 co-occurrences** (by shared-article count, unioned across
+      both endpoints so a strong link survives even if the other tag has
+      even stronger ties elsewhere), cutting the topic graph from ~doubled
+      hundreds of edges down to roughly one per node-pair that actually
+      matters. Combined with further tuning (repulsion 9000→15000, spring
+      length 220→260, spring strength 0.02→0.012, center-pull 0.007→0.004)
+      and a full (not partial) reheat on drag-start so neighbors visibly
+      make room in real time instead of staying stiff. Verified live:
+      dragging the largest hub now visibly relocates it and reshapes its
+      neighborhood in real time, the zoomed-out 43-topic view shows real
+      breathing room with outliers pushed to the fringes instead of one
+      dense blob, and it resettles cleanly (no jitter) after release.
+- [x] **Recent search history.** Last 8 searches persist in `localStorage`
+      (`blogArchive.recentSearches.v1`) and render as clickable chips under
+      the search box — clicking one refills the search box, re-runs the
+      query, and moves it back to the front of the list (dedup on re-run).
+      Rendered on page load too, not just after a new search, so history
+      survives a full reload as required. Verified: `node --check web/app.js`.
+- [x] **Local AI app access via a real MCP server** — the user explicitly
+      rejected "⧉ Copy prompt" as insufficient ("I don't really want that...
+      I must need... my locally installed chatgpt or claude or perplexity to
+      find me the content"), so built the actual thing: `scraper/src/
+      mcp-server.js`, a [Model Context Protocol](https://modelcontextprotocol.io)
+      server (`@modelcontextprotocol/sdk`) that runs over stdio and exposes
+      five tools reading `data/blogs.db` directly (read-only queries):
+      `search_archive` (same FTS5 AND/OR/NOT syntax as the web UI),
+      `get_article`, `list_recent_articles`, `list_tags`, `list_sources`.
+      Documented exact `claude_desktop_config.json` setup in README. Honestly
+      caveated rather than overclaiming: as of now, ChatGPT desktop's
+      MCP/connector support targets *hosted* servers with OAuth (not a local
+      `stdio` process like this), and Perplexity desktop has no equivalent
+      local-tool mechanism at all — so this genuinely works for Claude
+      Desktop today, not (yet) for the other two; MCP being app-agnostic
+      means it should work for them too if/when they add local-server
+      support. Verified live: spawned the server as a real child process,
+      drove it through the actual MCP JSON-RPC handshake (`initialize` →
+      `tools/list` → `tools/call`), and confirmed `search_archive` and
+      `list_sources` return correct real data from the live archive (e.g.
+      `search_archive({query:"climate"})` returned real matching articles
+      with working snippets; `list_sources` returned all 5 real sources with
+      correct per-site counts).
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →
       General → Workflow permissions → Read and write) — one-time manual
-      steps I can't do via git.
+      steps I can't do via git. This is very likely the cause of the newest
+      `Failed to create deployment (status: 404)` / `HttpError: Not Found`
+      error at the `deploy-pages` step (distinct from the earlier
+      `contents: read` permissions bug, which is already fixed) — the scrape
+      job itself succeeds and produces a build artifact, but the Pages API
+      call 404s, which matches "Pages was never enabled" rather than a
+      workflow-file bug.
 - [ ] Add `GROQ_API_KEY` and `GEMINI_API_KEY` as repo secrets (Settings →
       Secrets and variables → Actions) so the daily Action and the
       "Analyze patterns" workflow can use them too — I only had them

@@ -25,6 +25,10 @@
         <input id="search-input" type="text" placeholder='Search e.g. climate AND (water OR carbon) NOT "explained"' autocomplete="off" />
         <button id="search-help-btn" title="Search syntax help" aria-label="Search syntax help">?</button>
       </div>
+      <div id="recent-searches" class="recent-searches hidden">
+        <span class="recent-searches-label">Recent:</span>
+        <span id="recent-searches-list"></span>
+      </div>
       <div class="meta-bar">
         <select id="site-filter"><option value="">All sources</option></select>
         <label class="unread-toggle"><input type="checkbox" id="unread-only" /> Unread only</label>

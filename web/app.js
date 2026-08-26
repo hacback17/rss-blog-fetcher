@@ -9,6 +9,8 @@ const OVERLAY_KEY = "blogArchive.overlay.v1";
 const THEME_KEY = "blogArchive.theme";
 const AI_SETTINGS_KEY = "blogArchive.aiSettings.v1";
 const SITES_URL = "data/sites.json";
+const RECENT_SEARCHES_KEY = "blogArchive.recentSearches.v1";
+const MAX_RECENT_SEARCHES = 8;
 
 const state = {
   db: null,
@@ -33,7 +35,7 @@ const els = {};
   "reader-words", "reader-body", "reader-source-link", "reader-pane", "reader-read-toggle",
   "reader-tags", "theme-toggle", "data-menu-btn", "data-menu", "export-db-btn", "export-jsonl-btn",
   "export-overlay-btn", "import-overlay-input", "reports-btn", "reports-menu", "reports-list",
-  "log-btn", "log-menu", "log-list",
+  "log-btn", "log-menu", "log-list", "recent-searches", "recent-searches-list",
   "sources-btn", "sources-menu", "sources-list", "export-sources-btn",
   "ask-btn", "ask-panel", "ask-settings-btn", "ask-close-btn", "ask-settings", "ask-provider",
   "ask-key-row", "ask-api-key", "ask-local-url-row", "ask-local-url", "ask-local-model-row",
@@ -196,6 +198,7 @@ async function init() {
   populateSiteFilter();
   populateTagList();
   wireEvents();
+  renderRecentSearches();
   runQuery();
 }
 
@@ -268,6 +271,7 @@ function wireEvents() {
       state.query = els.searchInput.value.trim();
       state.page = 0;
       runQuery();
+      if (state.query) recordRecentSearch(state.query);
     }, 300);
   });
 
@@ -420,6 +424,59 @@ function normalizeFtsQuery(raw) {
       return upper === "AND" || upper === "OR" || upper === "NOT" ? upper : tok;
     })
     .join(" ");
+}
+
+function loadRecentSearches() {
+  try {
+    const raw = localStorage.getItem(RECENT_SEARCHES_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter((q) => typeof q === "string" && q.trim()) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentSearches(list) {
+  try {
+    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(list));
+  } catch {
+    // storage unavailable (private browsing, quota) — recent searches just won't persist
+  }
+}
+
+function recordRecentSearch(query) {
+  const trimmed = query.trim();
+  if (!trimmed) return;
+  let list = loadRecentSearches();
+  list = list.filter((q) => q.toLowerCase() !== trimmed.toLowerCase());
+  list.unshift(trimmed);
+  list = list.slice(0, MAX_RECENT_SEARCHES);
+  saveRecentSearches(list);
+  renderRecentSearches();
+}
+
+function renderRecentSearches() {
+  const list = loadRecentSearches();
+  if (!list.length) {
+    els.recentSearches.classList.add("hidden");
+    els.recentSearchesList.innerHTML = "";
+    return;
+  }
+  els.recentSearches.classList.remove("hidden");
+  els.recentSearchesList.innerHTML = list
+    .map((q, i) => `<span class="recent-search-chip" data-idx="${i}">${escapeHtml(q)}</span>`)
+    .join("");
+  els.recentSearchesList.querySelectorAll(".recent-search-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const q = list[Number(chip.dataset.idx)];
+      if (q === undefined) return;
+      els.searchInput.value = q;
+      state.query = q;
+      state.page = 0;
+      runQuery();
+      recordRecentSearch(q);
+    });
+  });
 }
 
 function commonFilters(alias) {
@@ -698,9 +755,13 @@ function wireGraph() {
 }
 
 function handleGraphNodeClick(node) {
-  if (graphState.mode === "tags") {
+  // Deliberately flat, Obsidian-style: a hub only drills further when it's
+  // a top-level topic (graphState.mode === "tags"). Once you're inside a
+  // tag's article view, its hub node is just the center of that view, not
+  // another drill-in target — there is no cluster-inside-cluster nesting.
+  if (node.kind === "hub" && graphState.mode === "tags") {
     showArticleGraphForTag(node.refId, node.label);
-  } else {
+  } else if (node.kind === "leaf") {
     els.graphBackdrop.classList.add("hidden");
     const li = els.articleList.querySelector(`li[data-id="${node.refId}"]`);
     selectArticle(node.refId, li);
@@ -715,8 +776,7 @@ function handleGraphHover(node, clientX, clientY) {
   const bodyRect = els.graphCanvas.parentElement.getBoundingClientRect();
   els.graphTooltip.style.left = `${clientX - bodyRect.left + 12}px`;
   els.graphTooltip.style.top = `${clientY - bodyRect.top + 12}px`;
-  els.graphTooltip.textContent =
-    graphState.mode === "tags" ? `${node.label} — ${node.count} article(s)` : node.label;
+  els.graphTooltip.textContent = node.kind === "hub" ? `${node.label} — ${node.count} article(s)` : node.label;
   els.graphTooltip.classList.remove("hidden");
 }
 
@@ -744,8 +804,31 @@ function showTagGraph() {
   // plain autoincrement integers from different tables — without a prefix
   // they can (and do) collide numerically between this graph and the
   // article-level one, corrupting the force layout's node-reuse logic.
-  const nodes = rawNodes.map((n) => ({ id: `t${n.id}`, refId: n.id, label: n.label, count: n.count }));
-  const edges = rawEdges.map((e) => ({ source: `t${e.source}`, target: `t${e.target}`, weight: e.weight }));
+  const nodes = rawNodes.map((n) => ({ id: `t${n.id}`, refId: n.id, label: n.label, count: n.count, kind: "hub" }));
+
+  // With broad category tags, most pairs co-occur *somewhat* — keeping
+  // every edge produces a near-complete graph (every node linked to nearly
+  // every other), which no amount of repulsion/spacing can untangle into
+  // something readable, and makes every node hard to drag free since it's
+  // held by 30+ springs at once. Instead, keep only each tag's strongest
+  // few co-occurrences (by shared-article count) — the relationships that
+  // actually distinguish it — and union across both endpoints so a strong
+  // link isn't dropped just because the *other* tag has even stronger ties
+  // elsewhere.
+  const TOP_EDGES_PER_NODE = 3;
+  const byNode = new Map();
+  for (const e of rawEdges) {
+    if (!byNode.has(e.source)) byNode.set(e.source, []);
+    if (!byNode.has(e.target)) byNode.set(e.target, []);
+    byNode.get(e.source).push(e);
+    byNode.get(e.target).push(e);
+  }
+  const keep = new Set();
+  for (const list of byNode.values()) {
+    list.sort((a, b) => b.weight - a.weight);
+    for (const e of list.slice(0, TOP_EDGES_PER_NODE)) keep.add(e);
+  }
+  const edges = [...keep].map((e) => ({ source: `t${e.source}`, target: `t${e.target}`, weight: e.weight }));
 
   els.graphSubtitle.textContent = `${nodes.length} topics — click one to see its articles`;
   els.graphEmpty.classList.toggle("hidden", nodes.length > 0);
@@ -760,57 +843,29 @@ function showArticleGraphForTag(tagId, tagName) {
 
   const rawArticles = queryAll(
     state.db,
-    `SELECT a.id, a.title AS label, a.word_count AS count
+    `SELECT a.id, a.title AS label
      FROM articles a JOIN article_tags at ON at.article_id = a.id
      WHERE at.tag_id = $tagId
      ORDER BY COALESCE(a.published_at, a.fetched_at) DESC LIMIT 200`,
     { $tagId: tagId }
   );
 
-  let rawEdges = [];
-  if (rawArticles.length > 1) {
-    const ids = rawArticles.map((a) => a.id);
-    const { clause, params } = buildIdInClause(ids, "id");
-    // Every article here already shares $tagId by construction, so that
-    // overlap alone is excluded — weight counts *other* shared tags, which
-    // is what actually distinguishes closely- vs loosely-related articles
-    // within this set. Without excluding it, a big tag produces a near-
-    // complete graph (every pair "connected" via the trivial shared tag),
-    // which both looks like a hairball and is expensive to lay out.
-    // Also require at least 2 other shared tags (not just 1) — with a
-    // handful of tags per article, requiring only 1 still leaves the graph
-    // dense enough to look like an undifferentiated blob rather than
-    // showing real substructure.
-    rawEdges = queryAll(
-      state.db,
-      `SELECT at1.article_id AS source, at2.article_id AS target, COUNT(*) AS weight
-       FROM article_tags at1 JOIN article_tags at2
-         ON at1.tag_id = at2.tag_id AND at1.article_id < at2.article_id
-       WHERE at1.article_id IN (${clause}) AND at2.article_id IN (${clause})
-         AND at1.tag_id != $tagId
-       GROUP BY at1.article_id, at2.article_id
-       HAVING weight >= 2`,
-      { ...params, $tagId: tagId }
-    );
-  }
+  // Deliberately flat, one level deep — like Obsidian's local graph view: a
+  // single hub node (this tag) with every one of its articles as a leaf
+  // spoking directly off it, nothing more. An earlier version tried to also
+  // sub-cluster articles by *other* shared tags, but that produced clusters
+  // nested inside clusters when you clicked further in, which read as
+  // confusing rather than helpful — the hub's own label ("why are these
+  // grouped": they all carry this tag) is already the full explanation.
+  // See showTagGraph() for why node ids need a namespace prefix.
+  const hubNode = { id: `t${tagId}`, refId: tagId, label: tagName, count: rawArticles.length, kind: "hub" };
+  const articleNodes = rawArticles.map((a) => ({ id: `a${a.id}`, refId: a.id, label: a.label, kind: "leaf" }));
+  const edges = rawArticles.map((a) => ({ source: `t${tagId}`, target: `a${a.id}`, weight: 1 }));
 
-  // See showTagGraph() for why node ids need an "a"-prefix namespace here.
-  const nodes = rawArticles.map((a) => ({ id: `a${a.id}`, refId: a.id, label: a.label, count: a.count }));
-  const edges = rawEdges.map((e) => ({ source: `a${e.source}`, target: `a${e.target}`, weight: e.weight }));
-
-  els.graphSubtitle.textContent = `${nodes.length} article(s) — click one to open it`;
-  els.graphEmpty.classList.toggle("hidden", nodes.length > 0);
+  const nodes = [hubNode, ...articleNodes];
+  els.graphSubtitle.textContent = `${articleNodes.length} article(s) tagged "${tagName}" — click one to open it`;
+  els.graphEmpty.classList.toggle("hidden", articleNodes.length > 0);
   forceGraph.setData(nodes, edges);
-}
-
-function buildIdInClause(ids, prefix) {
-  const params = {};
-  const placeholders = ids.map((id, i) => {
-    const key = `$${prefix}${i}`;
-    params[key] = id;
-    return key;
-  });
-  return { clause: placeholders.join(","), params };
 }
 
 // ---------- reports ----------

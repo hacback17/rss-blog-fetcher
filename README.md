@@ -57,6 +57,9 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
 - **Date range filter.** "From"/"To" date pickers in the toolbar constrain
   every list/search result to that window (combines with search, tag, site,
   and unread filters — all are ANDed together).
+- **Recent searches.** The last 8 searches you've run show as clickable chips
+  under the search box — click one to re-run it instantly. Saved in
+  `localStorage`, so they survive a full page reload (not tied to a session).
 - **Light/dark toggle.** The 🌓 button in the header cycles
   system → light → dark, remembered per-browser.
 - **Topic graph** — an Obsidian-style interactive graph of tags and how they
@@ -64,6 +67,9 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
   below.
 - **Ask your archive** — an AI Q&A chat over your own data, see "Ask your
   archive" below.
+- **Local AI app access (MCP server)** — lets a locally-installed Claude
+  Desktop app search/read the archive directly, no copy/paste. See "Local AI
+  app access" below.
 - **Sources panel** — lists every configured site with the exact sitemap/RSS
   URLs it's using, and links to add/remove a source. See "Adding a source".
 - **Scraping log** — rolling 7-day history of every run, per site, with
@@ -212,14 +218,27 @@ by how often. It's computed live from `tags`/`article_tags` on every open —
 there's nothing to precompute or keep in sync, so it automatically reflects
 whatever's been scraped/tagged/added so far, no rebuild step.
 
-Click a tag to zoom into just its articles, laid out the same way — nodes are
-articles, edges connect ones that share *other* tags beyond the one you
-zoomed into (so within "Water Crisis," articles that are also tagged
-"Agriculture" cluster together, separately from ones also tagged "Disaster &
-Extreme Weather"). Click an article node to open it in the reader. Drag to
-pan, scroll/pinch to zoom, drag a node to reposition it — it's a small
-hand-rolled canvas force simulation (no charting library), themed to match
-light/dark mode.
+Click a tag to zoom into just its articles. Two kinds of node are drawn, and
+they stay visually distinct at any zoom level:
+
+- **Hub nodes** (purple) are topics. At the top level these are all your
+  tags, sized by how many other tags they co-occur with, edged to each
+  other by co-occurrence. Click one to zoom into just that tag.
+- **Leaf nodes** (green) are individual articles. They're always the same
+  small size and color, and always show their title, not just on hover.
+
+Deliberately **flat, one level deep — like Obsidian's local graph view, not
+a nested tree**: zooming into a tag shows a single hub (that tag) with every
+one of its articles spoking directly off it, and that's it — no clusters
+inside clusters. The hub's own label is already the answer to "why are these
+grouped": they all carry that tag. Click a leaf to open that article in the
+reader; the hub itself is just the center of the view, not another drill-in
+target, so there's nowhere further to descend into by accident.
+
+Drag to pan, scroll/pinch to zoom, drag a node to reposition it — it's a
+small hand-rolled canvas force simulation (no charting library) with enough
+node repulsion that edges spread out instead of visually overlapping, themed
+to match light/dark mode.
 
 ## Ask your archive
 
@@ -266,6 +285,56 @@ per-query cost. The prompt itself is also fully editable: ⚙ settings has a
 **"Prompt template"** field (`{{articles}}` / `{{question}}` placeholders)
 used by every provider *and* by "Copy prompt", so your own specially-crafted
 instructions apply everywhere, not just when copying.
+
+## Local AI app access (MCP server)
+
+"Copy prompt" above is a manual bridge — you still have to paste. If you want
+your **locally-installed Claude Desktop app** to search and read this archive
+itself, on its own, without you copying anything, this repo also ships a
+small [MCP](https://modelcontextprotocol.io) server: `scraper/src/mcp-server.js`.
+It runs locally, reads `data/blogs.db` directly (read-only queries — it never
+writes to the file), and exposes five tools: `search_archive` (same
+AND/OR/NOT full-text search as the web UI), `get_article`, `list_recent_articles`,
+`list_tags`, and `list_sources`.
+
+**Setup (one-time):**
+
+1. Make sure you've run `npm install` in `scraper/` at least once (installs
+   the MCP SDK).
+2. Open Claude Desktop's config file:
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+3. Add an entry under `mcpServers` (create the file/key if it doesn't exist),
+   using the **absolute path** to this repo on your machine:
+   ```json
+   {
+     "mcpServers": {
+       "blog-archive": {
+         "command": "node",
+         "args": [
+           "--experimental-sqlite",
+           "/absolute/path/to/RSS_Data/scraper/src/mcp-server.js"
+         ]
+       }
+     }
+   }
+   ```
+4. Restart Claude Desktop. It should list "blog-archive" under its available
+   tools/connectors — from then on you can just ask Claude Desktop things
+   like "search my blog archive for articles about water scarcity in India"
+   and it calls the tool itself, no copy/paste, no API key, fully offline
+   (it's reading the same `data/blogs.db` file the web UI does).
+
+**Honest limitation on ChatGPT and Perplexity:** as of when this was built,
+neither the ChatGPT desktop app nor the Perplexity desktop app supports
+connecting to an arbitrary local MCP server the way Claude Desktop does —
+ChatGPT's MCP/connector support is aimed at *hosted* servers with OAuth, not
+a local `stdio` process like this one, and Perplexity's desktop app doesn't
+expose an equivalent local-tool mechanism at all. If that changes, this same
+server should work for them too (MCP is meant to be app-agnostic). Until
+then, for ChatGPT/Perplexity the practical options are still "⧉ Copy prompt"
+above, or the "⬇ Export JSONL" button (⇅ Data menu) if you want to hand them
+a file to search over manually.
 
 ## Respecting robots.txt
 

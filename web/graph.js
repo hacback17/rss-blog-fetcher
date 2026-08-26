@@ -5,10 +5,10 @@
 // CSS custom properties at render time, so it follows the light/dark theme
 // automatically.
 
-const REPULSION = 3200;
-const SPRING_LENGTH = 100;
-const SPRING_STRENGTH = 0.02;
-const CENTER_STRENGTH = 0.015;
+const REPULSION = 15000;
+const SPRING_LENGTH = 260;
+const SPRING_STRENGTH = 0.012;
+const CENTER_STRENGTH = 0.004;
 const DAMPING = 0.72;
 // d3-force-style cooling schedule: every tick's forces are scaled by
 // `alpha`, which decays geometrically toward 0. This is what actually
@@ -29,6 +29,13 @@ const MAX_VELOCITY = 30;
 // skipped — with 100+ nodes on screen at once, drawing every label produces
 // unreadable overlapping text. Zooming in or hovering still reveals it.
 const MIN_LABEL_PX = 13;
+// Leaf nodes (individual articles) always render at the same fixed size and
+// color regardless of their own degree — only hub/cluster nodes (topics)
+// scale with how many things connect to them, so size is a signal of "how
+// big a cluster is" rather than being noisy per-article variation.
+const LEAF_RADIUS = 5;
+const HUB_MIN_RADIUS = 10;
+const HUB_MAX_RADIUS = 32;
 
 export class ForceGraph {
   constructor(canvas, { onNodeClick, onHoverChange } = {}) {
@@ -62,13 +69,28 @@ export class ForceGraph {
     this._resize();
   }
 
-  // nodes: [{id, label, count}], edges: [{source, target, weight}]
+  // nodes: [{id, label, count, kind}] where kind is "hub" (a topic/cluster —
+  // sized by degree, labeled with the tag it represents) or "leaf" (an
+  // individual article — fixed size/color, always labeled with its title).
+  // edges: [{source, target, weight}]
   setData(nodes, edges) {
     const existing = new Map(this.nodes.map((n) => [n.id, n]));
-    const maxCount = Math.max(1, ...nodes.map((n) => n.count || 1));
+    const degree = new Map();
+    for (const e of edges) {
+      degree.set(e.source, (degree.get(e.source) || 0) + 1);
+      degree.set(e.target, (degree.get(e.target) || 0) + 1);
+    }
+    const hubDegrees = nodes.filter((n) => n.kind === "hub").map((n) => degree.get(n.id) || n.count || 1);
+    const maxHubDegree = Math.max(1, ...hubDegrees, 1);
     this.nodes = nodes.map((n) => {
       const prev = existing.get(n.id);
-      const radius = 6 + 16 * Math.sqrt((n.count || 1) / maxCount);
+      let radius;
+      if (n.kind === "leaf") {
+        radius = LEAF_RADIUS;
+      } else {
+        const d = degree.get(n.id) || n.count || 1;
+        radius = HUB_MIN_RADIUS + (HUB_MAX_RADIUS - HUB_MIN_RADIUS) * Math.sqrt(d / maxHubDegree);
+      }
       if (prev) return { ...prev, ...n, radius };
       const angle = Math.random() * Math.PI * 2;
       const dist = 60 + Math.random() * 120;
@@ -177,7 +199,54 @@ export class ForceGraph {
       n.y += n.vy;
     }
 
+    // Point-repulsion alone (above) pushes node *centers* apart, but doesn't
+    // know about node *size* — with hub nodes now ranging up to 32px radius,
+    // that let big circles visually overlap even at a "safe" center-to-
+    // center distance, which read as the layout being cluttered/compressed.
+    // A direct positional collision pass (not force-based, so it isn't
+    // diluted by the alpha cooldown) pushes any overlapping pair apart by
+    // exactly their overlap, every tick, until none remain.
+    this._resolveCollisions();
+
     this.alpha *= 1 - ALPHA_DECAY;
+  }
+
+  _resolveCollisions() {
+    const nodes = this.nodes;
+    // A flat px padding reads as basically nothing between two 32px-radius
+    // hubs but as a huge relative gap between two 5px leaves, so scale it
+    // with the smaller of the two radii instead — bigger nodes get more
+    // visible breathing room, small ones aren't pushed absurdly far apart.
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i];
+          const b = nodes[j];
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          let dist = Math.sqrt(dx * dx + dy * dy);
+          const padding = 8 + 0.6 * Math.min(a.radius, b.radius);
+          const minDist = a.radius + b.radius + padding;
+          if (dist >= minDist) continue;
+          if (dist < 0.01) {
+            dx = Math.random() - 0.5;
+            dy = Math.random() - 0.5;
+            dist = 0.01;
+          }
+          const overlap = (minDist - dist) / 2;
+          const ux = dx / dist;
+          const uy = dy / dist;
+          if (a !== this.dragNode) {
+            a.x -= ux * overlap;
+            a.y -= uy * overlap;
+          }
+          if (b !== this.dragNode) {
+            b.x += ux * overlap;
+            b.y += uy * overlap;
+          }
+        }
+      }
+    }
   }
 
   _colors() {
@@ -187,6 +256,11 @@ export class ForceGraph {
       textMuted: style.getPropertyValue("--text-muted").trim() || "#888",
       accent: style.getPropertyValue("--accent").trim() || "#1c6e4a",
       accentBg: style.getPropertyValue("--accent-bg").trim() || "#e8f4ee",
+      // Hub/cluster nodes (topics) get a second, distinct hue so they read
+      // as a different kind of thing from leaf/article nodes at a glance —
+      // not just "bigger", but visually a different category.
+      accent2: style.getPropertyValue("--accent2").trim() || "#6a4fb3",
+      accent2Bg: style.getPropertyValue("--accent2-bg").trim() || "#efe9fa",
       border: style.getPropertyValue("--border").trim() || "#ddd",
     };
   }
@@ -215,23 +289,57 @@ export class ForceGraph {
     }
     ctx.globalAlpha = 1;
 
-    // Labels below MIN_LABEL_PX on-screen are skipped (zoom in or hover to
-    // reveal them) — with 100+ nodes visible at once, drawing every label
-    // produces unreadable overlapping text rather than a legible graph.
-    for (const n of this.nodes) {
+    // While hovering a hub, only that hub and its *direct* neighbors get
+    // labeled — every other hub goes label-less regardless of size, so the
+    // hover state reads as "here's what connects to this topic" instead of
+    // the usual cluttered everything-large-enough-shows-its-name view.
+    let hoverNeighborIds = null;
+    if (this.hoverNode) {
+      hoverNeighborIds = new Set();
+      for (const e of this.edges) {
+        if (e.source === this.hoverNode.id) hoverNeighborIds.add(e.target);
+        else if (e.target === this.hoverNode.id) hoverNeighborIds.add(e.source);
+      }
+    }
+
+    // Hub (cluster/topic) nodes are drawn first so leaf nodes always sit on
+    // top of them. Leaf/article labels are always shown (small, fixed font)
+    // so a title is visible without hovering; hub labels — the tag that
+    // explains why its articles are clustered together — fall back to the
+    // MIN_LABEL_PX zoom threshold since there are usually far fewer of them
+    // and they're bigger, so overlap is less of a problem.
+    const drawOrder = [...this.nodes].sort((a, b) => (a.kind === "hub" ? 0 : 1) - (b.kind === "hub" ? 0 : 1));
+    for (const n of drawOrder) {
       const isHover = n === this.hoverNode;
+      const isHub = n.kind === "hub";
+      const fill = isHover ? (isHub ? c.accent2 : c.accent) : isHub ? c.accent2Bg : c.accentBg;
+      const stroke = isHub ? c.accent2 : c.accent;
+
       ctx.beginPath();
       ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-      ctx.fillStyle = isHover ? c.accent : c.accentBg;
+      ctx.fillStyle = fill;
       ctx.fill();
-      ctx.lineWidth = (isHover ? 2 : 1) / this.transform.scale;
-      ctx.strokeStyle = c.accent;
+      ctx.lineWidth = (isHover ? 2.5 : isHub ? 2 : 1) / this.transform.scale;
+      ctx.strokeStyle = stroke;
       ctx.stroke();
 
-      const fontSize = Math.max(9, Math.min(13, n.radius * 0.7));
-      if (isHover || fontSize * this.transform.scale > MIN_LABEL_PX) {
+      if (isHub) {
+        const fontSize = Math.max(10, Math.min(15, n.radius * 0.55));
+        const isHoverNeighbor = hoverNeighborIds && hoverNeighborIds.has(n.id);
+        const showLabel = this.hoverNode
+          ? isHover || isHoverNeighbor
+          : fontSize * this.transform.scale > MIN_LABEL_PX;
+        if (showLabel) {
+          ctx.font = `700 ${fontSize}px -apple-system, sans-serif`;
+          ctx.fillStyle = isHover ? c.accent2 : c.text;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "top";
+          ctx.fillText(truncateLabel(n.label, 26), n.x, n.y + n.radius + 4);
+        }
+      } else {
+        const fontSize = 10;
         ctx.font = `${isHover ? "600" : "500"} ${fontSize}px -apple-system, sans-serif`;
-        ctx.fillStyle = isHover ? c.accent : c.text;
+        ctx.fillStyle = isHover ? c.accent : c.textMuted;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         ctx.fillText(truncateLabel(n.label, 22), n.x, n.y + n.radius + 3);
@@ -265,7 +373,11 @@ export class ForceGraph {
     if (node) {
       this.dragNode = node;
       this.canvas.setPointerCapture(e.pointerId);
-      this._reheat(0.4); // let the rest of the graph react to the node being moved
+      // Full reheat (not a partial one) so the rest of the graph actively
+      // makes room in real time as you drag — a partial reheat left
+      // neighbors sluggish, which read as the dragged node being "hard to
+      // pull" free of its cluster.
+      this._reheat(1);
     } else {
       this.panning = true;
       this.canvas.classList.add("dragging");

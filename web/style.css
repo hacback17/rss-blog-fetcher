@@ -6,6 +6,8 @@
   --text-muted: #62676d;
   --accent: #1c6e4a;
   --accent-bg: #e8f4ee;
+  --accent2: #6a4fb3;
+  --accent2-bg: #efe9fa;
   --danger: #b3261e;
   --unread-dot: #1c6e4a;
 }
@@ -21,6 +23,8 @@
     --text-muted: #9aa0a6;
     --accent: #4caf82;
     --accent-bg: #17281f;
+    --accent2: #a68fe0;
+    --accent2-bg: #251e35;
     --danger: #f2857b;
     --unread-dot: #4caf82;
   }
@@ -35,6 +39,8 @@
   --text-muted: #9aa0a6;
   --accent: #4caf82;
   --accent-bg: #17281f;
+  --accent2: #a68fe0;
+  --accent2-bg: #251e35;
   --danger: #f2857b;
   --unread-dot: #4caf82;
 }
@@ -324,6 +330,20 @@ body {
 }
 .search-help ul { margin: 0.4rem 0 0; padding-left: 1.1rem; }
 .search-help code { background: rgba(127,127,127,0.15); padding: 0.05rem 0.3rem; border-radius: 4px; }
+
+.recent-searches { margin-top: 0.4rem; font-size: 0.75rem; color: var(--text-muted); display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.recent-searches-label { color: var(--text-muted); }
+.recent-search-chip {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  margin-right: 0.3rem;
+}
+.recent-search-chip:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
 .hidden { display: none !important; }
 
 .meta-bar {
