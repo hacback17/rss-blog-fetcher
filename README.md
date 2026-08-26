@@ -59,6 +59,30 @@ then add it as a repo secret: **Settings → Secrets and variables → Actions �
 New repository secret**, name `GROQ_API_KEY`. Locally, `export
 GROQ_API_KEY=...` before `npm run run`.
 
+Calls are internally paced (a few seconds apart) to stay under the free
+tier's tokens-per-minute limit regardless of scraper concurrency. There's
+also a separate tokens-*per-day* cap (200k as of writing) — a very large
+single-day backfill across every site could exhaust it, in which case the
+remaining articles that day just silently get the offline keyword tags
+instead (never a crash). Since already-scraped articles aren't re-tagged
+automatically (only new/changed ones are), a one-off re-tag pass like the
+loop below is the way to upgrade any keyword-tagged articles once a key is
+in place:
+
+```bash
+cd scraper
+GROQ_API_KEY=... node -e "
+import('./src/db.js').then(async ({ openDb, listExistingTagNames, setAutoTags }) => {
+  const { generateTags } = await import('./src/autotag.js');
+  const db = openDb('../data/blogs.db');
+  for (const row of db.prepare('SELECT id, title, content_text FROM articles').all()) {
+    setAutoTags(db, row.id, await generateTags(row, listExistingTagNames(db)));
+  }
+  db.close();
+});
+"
+```
+
 ### Where read/tags/manual edits actually live
 
 This is a static site with no backend, so there's no server for the browser

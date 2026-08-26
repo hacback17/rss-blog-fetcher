@@ -92,12 +92,18 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
   pipeline (see below) instead of leaving early low-quality keyword-only
   tags in place.
 
-## In progress
-- [ ] Background job re-tagging all ~760 existing articles with the fixed
-      Groq pipeline (the very first batch was tagged before the model-name
-      bug was caught, so those got keyword-fallback tags instead of real
-      LLM ones). Runs itself, no action needed — check
-      `git log`/`data/blogs.db` tag quality later if curious.
+## Done — cleanup
+- [x] Re-tagged the full archive (759 articles) with the corrected Groq
+      pipeline: 42 consolidated tags, ~3.8 tags/article average, good reuse
+      across the vocabulary. Committed and pushed.
+- [x] Fixed a shell-arg bug in `analyze-patterns.yml`: tag names with
+      spaces (e.g. "Water Crisis") would have broken the unquoted arg
+      splice; switched to env vars + a proper bash array.
+- [x] Discovered and documented a real operational limit: Groq's free tier
+      has a tokens-*per-day* cap (200k) in addition to per-minute — a very
+      large single-day backfill could exhaust it (graceful degradation to
+      keyword tags, never a crash). Documented the one-off re-tag command
+      to upgrade any keyword-tagged articles later.
 
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
