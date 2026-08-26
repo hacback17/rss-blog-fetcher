@@ -19,21 +19,25 @@ const state = {
   tagId: 0,
   tagName: "",
   unreadOnly: false,
+  dateFrom: "",
+  dateTo: "",
   selectedId: null,
 };
 
 const els = {};
 [
   "article-list", "prev-page", "next-page", "page-label", "search-input", "search-help-btn",
-  "search-help", "site-filter", "unread-only", "result-count", "db-status", "active-tag-bar",
+  "search-help", "site-filter", "unread-only", "date-from", "date-to", "date-clear-btn",
+  "result-count", "db-status", "active-tag-bar",
   "tag-list", "reader-empty", "reader-article", "reader-title", "reader-author", "reader-date",
   "reader-words", "reader-body", "reader-source-link", "reader-pane", "reader-read-toggle",
   "reader-tags", "theme-toggle", "data-menu-btn", "data-menu", "export-db-btn", "export-jsonl-btn",
   "export-overlay-btn", "import-overlay-input", "reports-btn", "reports-menu", "reports-list",
+  "log-btn", "log-menu", "log-list",
   "sources-btn", "sources-menu", "sources-list", "export-sources-btn",
   "ask-btn", "ask-panel", "ask-settings-btn", "ask-close-btn", "ask-settings", "ask-provider",
   "ask-key-row", "ask-api-key", "ask-local-url-row", "ask-local-url", "ask-local-model-row",
-  "ask-local-model", "ask-messages", "ask-form", "ask-input",
+  "ask-local-model", "ask-prompt-template", "ask-messages", "ask-form", "ask-input", "ask-copy-btn",
   "add-text-btn", "add-text-backdrop", "add-text-modal", "add-text-close-btn", "add-text-title",
   "add-text-file-input", "add-text-body-input", "add-text-save-btn",
   "graph-btn", "graph-backdrop", "graph-modal", "graph-title", "graph-subtitle", "graph-back-btn",
@@ -281,6 +285,21 @@ function wireEvents() {
     runQuery();
   });
 
+  const onDateChange = () => {
+    state.dateFrom = els.dateFrom.value;
+    state.dateTo = els.dateTo.value;
+    els.dateClearBtn.classList.toggle("hidden", !state.dateFrom && !state.dateTo);
+    state.page = 0;
+    runQuery();
+  };
+  els.dateFrom.addEventListener("change", onDateChange);
+  els.dateTo.addEventListener("change", onDateChange);
+  els.dateClearBtn.addEventListener("click", () => {
+    els.dateFrom.value = "";
+    els.dateTo.value = "";
+    onDateChange();
+  });
+
   els.prevPage.addEventListener("click", () => {
     if (state.page > 0) { state.page--; runQuery(); }
   });
@@ -299,10 +318,15 @@ function wireEvents() {
     els.sourcesMenu.classList.toggle("hidden");
     if (!els.sourcesMenu.classList.contains("hidden")) loadSourcesList();
   });
+  els.logBtn.addEventListener("click", () => {
+    els.logMenu.classList.toggle("hidden");
+    if (!els.logMenu.classList.contains("hidden")) loadLogList();
+  });
   document.addEventListener("click", (e) => {
     if (!els.dataMenu.contains(e.target) && e.target !== els.dataMenuBtn) els.dataMenu.classList.add("hidden");
     if (!els.reportsMenu.contains(e.target) && e.target !== els.reportsBtn) els.reportsMenu.classList.add("hidden");
     if (!els.sourcesMenu.contains(e.target) && e.target !== els.sourcesBtn) els.sourcesMenu.classList.add("hidden");
+    if (!els.logMenu.contains(e.target) && e.target !== els.logBtn) els.logMenu.classList.add("hidden");
   });
 
   els.exportDbBtn.addEventListener("click", exportDatabase);
@@ -401,7 +425,9 @@ function normalizeFtsQuery(raw) {
 function commonFilters(alias) {
   return `AND ($siteId = '' OR ${alias}.site_id = $siteId)
           AND ($tagId = 0 OR EXISTS (SELECT 1 FROM article_tags at2 WHERE at2.article_id = ${alias}.id AND at2.tag_id = $tagId))
-          AND ($unreadOnly = 0 OR ${alias}.read_at IS NULL)`;
+          AND ($unreadOnly = 0 OR ${alias}.read_at IS NULL)
+          AND ($dateFrom = '' OR substr(${alias}.published_at, 1, 10) >= $dateFrom)
+          AND ($dateTo = '' OR substr(${alias}.published_at, 1, 10) <= $dateTo)`;
 }
 
 function runQuery() {
@@ -414,6 +440,8 @@ function runQuery() {
     $siteId: state.siteId,
     $tagId: state.tagId,
     $unreadOnly: state.unreadOnly ? 1 : 0,
+    $dateFrom: state.dateFrom,
+    $dateTo: state.dateTo,
   };
   const listParams = { ...filterParams, $limit: PAGE_SIZE, $offset: offset };
 
@@ -809,6 +837,46 @@ async function loadReportsList() {
   }
 }
 
+// ---------- run log ----------
+
+function loadLogList() {
+  els.logList.innerHTML = "<li>Loading…</li>";
+  let rows;
+  try {
+    rows = queryAll(state.db, "SELECT * FROM run_log ORDER BY run_at DESC LIMIT 200");
+  } catch {
+    els.logList.innerHTML = '<li class="reports-empty">No log data yet — this database predates the run log.</li>';
+    return;
+  }
+  if (rows.length === 0) {
+    els.logList.innerHTML = '<li class="reports-empty">No runs logged in the last 7 days.</li>';
+    return;
+  }
+
+  els.logList.innerHTML = "";
+  for (const row of rows) {
+    const li = document.createElement("li");
+    const failed = row.status === "failed";
+    const when = new Date(row.run_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    let titles = [];
+    try { titles = JSON.parse(row.new_titles || "[]"); } catch { /* ignore malformed */ }
+
+    const head = document.createElement("div");
+    head.className = "log-head";
+    head.innerHTML = `<span><span class="log-site">${escapeHtml(row.site_name)}</span> <span class="log-counts${failed ? " status-failed" : ""}">— +${row.new_articles} new, ${row.updated_articles} updated, ${row.errors} errors (${row.urls_in_sitemap} discovered)</span></span><span class="log-when">${when}</span>`;
+    li.appendChild(head);
+
+    if (titles.length) {
+      const list = document.createElement("ul");
+      list.className = "log-titles hidden";
+      list.innerHTML = titles.map((t) => `<li><a href="${escapeHtml(t.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t.title)}</a></li>`).join("");
+      head.addEventListener("click", () => list.classList.toggle("hidden"));
+      li.appendChild(list);
+    }
+    els.logList.appendChild(li);
+  }
+}
+
 // ---------- sources ----------
 
 let sitesConfigCache = null;
@@ -941,6 +1009,16 @@ const STOPWORDS = new Set([
   "there", "which", "will", "would", "could", "than", "then", "them", "they",
 ]);
 
+const DEFAULT_PROMPT_TEMPLATE = `Answer the question using ONLY the articles below from the user's personal archive. Cite sources
+inline like [1], [2] for every claim. If the articles don't contain enough information to answer
+well, say so plainly instead of guessing or using outside knowledge.
+
+ARTICLES:
+
+{{articles}}
+
+QUESTION: {{question}}`;
+
 function loadAiSettings() {
   try {
     const parsed = JSON.parse(localStorage.getItem(AI_SETTINGS_KEY));
@@ -950,9 +1028,14 @@ function loadAiSettings() {
       geminiKey: parsed.geminiKey || "",
       localUrl: parsed.localUrl || "http://localhost:1234/v1/chat/completions",
       localModel: parsed.localModel || "",
+      promptTemplate: parsed.promptTemplate || DEFAULT_PROMPT_TEMPLATE,
     };
   } catch {
-    return { provider: "groq", groqKey: "", geminiKey: "", localUrl: "http://localhost:1234/v1/chat/completions", localModel: "" };
+    return {
+      provider: "groq", groqKey: "", geminiKey: "",
+      localUrl: "http://localhost:1234/v1/chat/completions", localModel: "",
+      promptTemplate: DEFAULT_PROMPT_TEMPLATE,
+    };
   }
 }
 
@@ -967,6 +1050,7 @@ function wireAskPanel() {
   els.askApiKey.value = settings.provider === "gemini" ? settings.geminiKey : settings.groqKey;
   els.askLocalUrl.value = settings.localUrl;
   els.askLocalModel.value = settings.localModel;
+  els.askPromptTemplate.value = settings.promptTemplate;
 
   els.askBtn.addEventListener("click", () => {
     els.askPanel.classList.toggle("hidden");
@@ -998,6 +1082,11 @@ function wireAskPanel() {
     s.localModel = els.askLocalModel.value;
     saveAiSettings(s);
   });
+  els.askPromptTemplate.addEventListener("input", () => {
+    const s = loadAiSettings();
+    s.promptTemplate = els.askPromptTemplate.value || DEFAULT_PROMPT_TEMPLATE;
+    saveAiSettings(s);
+  });
 
   els.askForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -1005,6 +1094,12 @@ function wireAskPanel() {
     if (!question) return;
     els.askInput.value = "";
     handleAskQuestion(question);
+  });
+
+  els.askCopyBtn.addEventListener("click", () => {
+    const question = els.askInput.value.trim();
+    if (!question) { alert("Type a question first."); return; }
+    handleCopyPrompt(question);
   });
 }
 
@@ -1047,17 +1142,8 @@ function buildAskPrompt(question, articles) {
       return `[${i + 1}] (${date}) ${a.title} — ${a.site_name}${a.tags ? ` | tags: ${a.tags}` : ""}\n${text}`;
     })
     .join("\n\n---\n\n");
-  return [
-    "Answer the question using ONLY the articles below from the user's personal archive. Cite sources",
-    "inline like [1], [2] for every claim. If the articles don't contain enough information to answer",
-    "well, say so plainly instead of guessing or using outside knowledge.",
-    "",
-    "ARTICLES:",
-    "",
-    corpus,
-    "",
-    `QUESTION: ${question}`,
-  ].join("\n");
+  const template = loadAiSettings().promptTemplate || DEFAULT_PROMPT_TEMPLATE;
+  return template.replaceAll("{{articles}}", corpus).replaceAll("{{question}}", question);
 }
 
 async function callProvider(prompt) {
@@ -1135,6 +1221,32 @@ async function handleAskQuestion(question) {
     loading.className = "ask-msg assistant error";
     loading.textContent = "Error: " + err.message;
   }
+  els.askMessages.scrollTop = els.askMessages.scrollHeight;
+}
+
+// Builds the same retrieval-augmented prompt as handleAskQuestion but never
+// calls any API — just puts it on the clipboard. This is the bridge to
+// tools with no local API to call into (the ChatGPT/Claude desktop apps,
+// claude.ai, etc): compose it here with your own edited template, paste it
+// wherever you actually want an answer from.
+async function handleCopyPrompt(question) {
+  document.querySelector(".ask-empty")?.remove();
+  appendAskMessage("user", escapeHtml(question));
+
+  const articles = retrieveForQuestion(question);
+  if (articles.length === 0) {
+    appendAskMessage("assistant", "Couldn't find any archived articles matching that question — nothing to copy.");
+    return;
+  }
+
+  const prompt = buildAskPrompt(question, articles);
+  try {
+    await navigator.clipboard.writeText(prompt);
+    appendAskMessage("assistant", `Copied a prompt built from ${articles.length} article(s) to your clipboard. Paste it into ChatGPT, Claude, or any other tool.`);
+  } catch (err) {
+    appendAskMessage("assistant error", "Could not copy to clipboard: " + err.message);
+  }
+  els.askInput.value = "";
   els.askMessages.scrollTop = els.askMessages.scrollHeight;
 }
 

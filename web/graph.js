@@ -5,19 +5,30 @@
 // CSS custom properties at render time, so it follows the light/dark theme
 // automatically.
 
-const REPULSION = 2600;
-const SPRING_LENGTH = 90;
+const REPULSION = 3200;
+const SPRING_LENGTH = 100;
 const SPRING_STRENGTH = 0.02;
-const CENTER_STRENGTH = 0.01;
-const DAMPING = 0.82;
-const SETTLE_VELOCITY = 0.04;
-// Hard ceiling on per-tick force/velocity. A dense graph (many nodes sharing
-// many edges) can otherwise build up runaway feedback between repulsion and
-// spring forces — positions escape to the point of floating-point overflow
-// (values become Infinity, then NaN, and the graph silently renders empty).
-// This bounds the worst case regardless of how dense the input graph is.
-const MAX_FORCE = 40;
-const MAX_VELOCITY = 25;
+const CENTER_STRENGTH = 0.015;
+const DAMPING = 0.72;
+// d3-force-style cooling schedule: every tick's forces are scaled by
+// `alpha`, which decays geometrically toward 0. This is what actually
+// *guarantees* the simulation settles within a bounded number of ticks,
+// regardless of how dense the graph is — relying on velocity damping alone
+// (the previous approach) let a sufficiently dense/oscillatory graph (e.g.
+// a common tag with 150+ heavily-cross-tagged articles) jitter forever
+// instead of converging, which read as the layout "flickering".
+const ALPHA_DECAY = 0.02;
+const ALPHA_MIN = 0.002;
+// Hard ceiling on per-tick force/velocity, as a second line of defense: a
+// very dense graph can still build up a large force on a single tick before
+// alpha has decayed much, and a single unbounded tick is enough to overflow
+// a position to Infinity/NaN (which then renders nothing, permanently).
+const MAX_FORCE = 60;
+const MAX_VELOCITY = 30;
+// Below this on-screen radius (in CSS px, i.e. already ×zoom), a label is
+// skipped — with 100+ nodes on screen at once, drawing every label produces
+// unreadable overlapping text. Zooming in or hovering still reveals it.
+const MIN_LABEL_PX = 13;
 
 export class ForceGraph {
   constructor(canvas, { onNodeClick, onHoverChange } = {}) {
@@ -27,6 +38,7 @@ export class ForceGraph {
     this.onHoverChange = onHoverChange;
     this.nodes = [];
     this.edges = [];
+    this.alpha = 0;
     this.transform = { x: 0, y: 0, scale: 1 };
     this.dragNode = null;
     this.dragMoved = false;
@@ -65,6 +77,7 @@ export class ForceGraph {
     const byId = new Map(this.nodes.map((n) => [n.id, n]));
     this.edges = edges.filter((e) => byId.has(e.source) && byId.has(e.target));
     this.transform = { x: 0, y: 0, scale: 1 };
+    this.alpha = 1;
     this._wake();
   }
 
@@ -98,18 +111,29 @@ export class ForceGraph {
 
   _tick() {
     if (this._destroyed) return;
-    const moving = this._step();
+    this._step();
     this._draw();
-    if (moving || this.dragNode || this.panning) {
+    const settled = this.alpha < ALPHA_MIN;
+    if (!settled || this.dragNode || this.panning) {
       this._raf = requestAnimationFrame(() => this._tick());
     } else {
       this._raf = null;
     }
   }
 
+  // Reheats the simulation so it settles again (e.g. after a drag, or new
+  // data) instead of staying frozen at whatever alpha it last cooled to.
+  _reheat(alpha = 1) {
+    this.alpha = Math.max(this.alpha, alpha);
+    this._wake();
+  }
+
   _step() {
+    if (this.alpha < ALPHA_MIN) return;
     const nodes = this.nodes;
     const byId = new Map(nodes.map((n) => [n.id, n]));
+    const alpha = this.alpha;
+
     for (const n of nodes) {
       if (n === this.dragNode) continue;
       let fx = -n.x * CENTER_STRENGTH;
@@ -143,18 +167,17 @@ export class ForceGraph {
       if (b !== this.dragNode) { b._fx -= fx; b._fy -= fy; }
     }
 
-    let maxVel = 0;
     for (const n of nodes) {
       if (n === this.dragNode) continue;
-      n._fx = clamp(n._fx, MAX_FORCE);
-      n._fy = clamp(n._fy, MAX_FORCE);
-      n.vx = clamp((n.vx + n._fx) * DAMPING, MAX_VELOCITY);
-      n.vy = clamp((n.vy + n._fy) * DAMPING, MAX_VELOCITY);
+      const fx = clamp(n._fx * alpha, MAX_FORCE);
+      const fy = clamp(n._fy * alpha, MAX_FORCE);
+      n.vx = clamp((n.vx + fx) * DAMPING, MAX_VELOCITY);
+      n.vy = clamp((n.vy + fy) * DAMPING, MAX_VELOCITY);
       n.x += n.vx;
       n.y += n.vy;
-      maxVel = Math.max(maxVel, Math.abs(n.vx), Math.abs(n.vy));
     }
-    return maxVel > SETTLE_VELOCITY;
+
+    this.alpha *= 1 - ALPHA_DECAY;
   }
 
   _colors() {
@@ -176,10 +199,11 @@ export class ForceGraph {
     ctx.translate(this.width / 2 + this.transform.x, this.height / 2 + this.transform.y);
     ctx.scale(this.transform.scale, this.transform.scale);
 
+    const byId = new Map(this.nodes.map((n) => [n.id, n]));
     ctx.lineWidth = 1 / this.transform.scale;
     for (const e of this.edges) {
-      const a = this.nodes.find((n) => n.id === e.source);
-      const b = this.nodes.find((n) => n.id === e.target);
+      const a = byId.get(e.source);
+      const b = byId.get(e.target);
       if (!a || !b) continue;
       const highlighted = this.hoverNode && (this.hoverNode === a || this.hoverNode === b);
       ctx.strokeStyle = highlighted ? c.accent : c.border;
@@ -191,6 +215,9 @@ export class ForceGraph {
     }
     ctx.globalAlpha = 1;
 
+    // Labels below MIN_LABEL_PX on-screen are skipped (zoom in or hover to
+    // reveal them) — with 100+ nodes visible at once, drawing every label
+    // produces unreadable overlapping text rather than a legible graph.
     for (const n of this.nodes) {
       const isHover = n === this.hoverNode;
       ctx.beginPath();
@@ -202,7 +229,7 @@ export class ForceGraph {
       ctx.stroke();
 
       const fontSize = Math.max(9, Math.min(13, n.radius * 0.7));
-      if (fontSize * this.transform.scale > 6) {
+      if (isHover || fontSize * this.transform.scale > MIN_LABEL_PX) {
         ctx.font = `${isHover ? "600" : "500"} ${fontSize}px -apple-system, sans-serif`;
         ctx.fillStyle = isHover ? c.accent : c.text;
         ctx.textAlign = "center";
@@ -238,11 +265,12 @@ export class ForceGraph {
     if (node) {
       this.dragNode = node;
       this.canvas.setPointerCapture(e.pointerId);
+      this._reheat(0.4); // let the rest of the graph react to the node being moved
     } else {
       this.panning = true;
       this.canvas.classList.add("dragging");
+      this._wake();
     }
-    this._wake();
   }
 
   _onPointerMove(e) {

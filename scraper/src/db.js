@@ -96,6 +96,25 @@ function initSchema(db) {
       errors INTEGER
     );
 
+    -- One row per site per run (unlike site_runs, which only keeps the most
+    -- recent). Pruned to a rolling 7-day window on every run — this is
+    -- specifically for "was scraping actually working this past week",
+    -- not a permanent audit trail.
+    CREATE TABLE IF NOT EXISTS run_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_at TEXT NOT NULL,
+      site_id TEXT NOT NULL,
+      site_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      urls_in_sitemap INTEGER,
+      new_articles INTEGER,
+      updated_articles INTEGER,
+      errors INTEGER,
+      new_titles TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_run_log_run_at ON run_log(run_at);
+
     CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT);
   `);
 
@@ -302,4 +321,25 @@ export function recordSiteRun(db, siteId, stats) {
        last_run_at = @lastRunAt, last_status = @lastStatus, urls_in_sitemap = @urlsInSitemap,
        new_articles = @newArticles, updated_articles = @updatedArticles, errors = @errors`
   ).run({ siteId, lastRunAt: new Date().toISOString(), ...stats });
+}
+
+// newTitles: [{title, url}], only the ones actually inserted/updated this
+// run (capped by the caller) — enough to answer "did it actually find
+// anything, and what" without the log growing unbounded.
+export function recordRunLog(db, siteId, siteName, stats, newTitles) {
+  db.prepare(
+    `INSERT INTO run_log (run_at, site_id, site_name, status, urls_in_sitemap, new_articles, updated_articles, errors, new_titles)
+     VALUES (@runAt, @siteId, @siteName, @status, @urlsInSitemap, @newArticles, @updatedArticles, @errors, @newTitles)`
+  ).run({
+    runAt: new Date().toISOString(),
+    siteId,
+    siteName,
+    status: stats.lastStatus,
+    urlsInSitemap: stats.urlsInSitemap,
+    newArticles: stats.newArticles,
+    updatedArticles: stats.updatedArticles,
+    errors: stats.errors,
+    newTitles: JSON.stringify(newTitles.slice(0, 20)),
+  });
+  db.prepare("DELETE FROM run_log WHERE run_at < datetime('now', '-7 days')").run();
 }

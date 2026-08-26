@@ -13,6 +13,7 @@ import {
   setKeywords,
   listExistingTagNames,
   recordSiteRun,
+  recordRunLog,
 } from "./db.js";
 import { fetchRobotsRules, isPathAllowed } from "./robots.js";
 import { fetchSitemapLevel } from "./sitemap.js";
@@ -115,6 +116,7 @@ async function collectRssUrls(site) {
 async function processSite(db, site) {
   console.log(`\n=== ${site.name} (${site.id}) ===`);
   const stats = { urlsInSitemap: 0, newArticles: 0, updatedArticles: 0, errors: 0, lastStatus: "ok" };
+  const newTitles = [];
 
   let robots = { disallow: [] };
   if (robotsEnabledFor(site)) {
@@ -194,6 +196,9 @@ async function processSite(db, site) {
 
         if (result === "inserted") stats.newArticles++;
         if (result === "updated") stats.updatedArticles++;
+        if (result === "inserted" || result === "updated") {
+          newTitles.push({ title: article.title || entry.loc, url: entry.loc });
+        }
 
         if (result === "inserted" || result === "updated") {
           try {
@@ -219,6 +224,7 @@ async function processSite(db, site) {
 
   if (stats.errors > 0 && stats.newArticles === 0 && stats.updatedArticles === 0) stats.lastStatus = "failed";
   recordSiteRun(db, site.id, stats);
+  recordRunLog(db, site.id, site.name, stats, newTitles);
   console.log(`  done: +${stats.newArticles} new, ${stats.updatedArticles} updated, ${stats.errors} errors`);
 }
 
@@ -234,13 +240,9 @@ async function main() {
       await processSite(db, site);
     } catch (err) {
       console.error(`Site ${site.id} failed entirely: ${err.stack}`);
-      recordSiteRun(db, site.id, {
-        urlsInSitemap: 0,
-        newArticles: 0,
-        updatedArticles: 0,
-        errors: 1,
-        lastStatus: "failed",
-      });
+      const failStats = { urlsInSitemap: 0, newArticles: 0, updatedArticles: 0, errors: 1, lastStatus: "failed" };
+      recordSiteRun(db, site.id, failStats);
+      recordRunLog(db, site.id, site.name, failStats, []);
     }
   }
   db.exec("PRAGMA optimize;");

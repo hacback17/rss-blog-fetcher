@@ -285,6 +285,70 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       opens the correct article in the reader (confirmed via title match),
       and the whole graph re-renders correctly in both themes.
 
+## Done — v7 (log, auto-pull, date filter, graph physics fix, copy-prompt, Substack)
+- [x] **7-day scraping run log**: new `run_log` table (one row per site per
+      run, unlike `site_runs` which only keeps the latest), auto-pruned to a
+      rolling 7 days on every write. 📋 Log button lists timestamp/status/
+      counts per run with expandable actual article titles. Directly
+      answers "is scraping still working, and what did it find" without
+      digging through Action run history. Verified live against a real
+      scraper run (6 rows, one per site, correct counts/titles).
+- [x] **Clarified (no code needed)**: the deploy failure the user re-checked
+      was them using GitHub's "Re-run jobs" on the *old failed run*, which
+      replays that run's original commit rather than pulling latest `main`
+      — the earlier `contents: read` fix was real but hadn't been exercised
+      yet. Explained the distinction; a fresh "Run workflow" click uses
+      current code.
+- [x] **`npm run preview` now auto-pulls from GitHub** (`git pull
+      --ff-only` — refuses rather than merging on diverged history, skips
+      entirely if there are local uncommitted changes, so it can't clobber
+      anything) and **opens the browser automatically**. Added
+      `preview.command` at the repo root for a real double-click launcher
+      (macOS). Verified both the "clean → pulls" and "dirty → skips safely"
+      paths live.
+- [x] **Date range filter**: From/To date pickers in the toolbar, ANDed
+      with search/tag/site/unread like the other filters. Verified live
+      (1438 → 114 articles on a real from-date, clear button correctly
+      resets).
+- [x] **Fixed the graph "flickering"** the user hit on a real dense tag
+      ("Climate Policy," 200 articles): the previous damping-only physics
+      could oscillate forever instead of converging for a sufficiently
+      dense graph. Replaced with a d3-force-style alpha-decay cooling
+      schedule (forces scaled by a global `alpha` that geometrically decays
+      to 0), which *guarantees* settling within a bounded number of ticks
+      regardless of density — this is the standard, well-tested technique
+      for exactly this failure mode, not an ad-hoc patch. Also decluttered
+      rendering (labels below a pixel-size threshold are skipped rather
+      than overlapping into unreadable text at default zoom; zooming in or
+      hovering still reveals them) and reduced edge density further
+      (require 2+ shared tags, not 1+). Verified live: same "Climate
+      Policy" scenario now settles (RAF loop genuinely stops, confirmed via
+      `_raf === null`) with 0 non-finite positions, and zooming in reveals
+      individually readable article clusters.
+- [x] **"⧉ Copy prompt" for ChatGPT/Claude desktop apps**: those apps don't
+      expose a local server the way LM Studio/Ollama do, so true API
+      integration isn't possible — explained that honestly rather than
+      building something that can't work. Built the practical equivalent
+      instead: composes the same retrieval-augmented prompt and puts it on
+      the clipboard instead of calling an API. Also added a fully editable
+      **prompt template** (`{{articles}}`/`{{question}}` placeholders,
+      persisted per-browser) used by both the automated providers and copy-
+      prompt, so custom instructions apply everywhere. Verified live (error
+      handling for the clipboard-permission case confirmed working; the
+      write itself is blocked in headless test automation specifically
+      because that environment's document isn't focused — a real user
+      clicking the button doesn't hit this).
+- [x] **Substack support — verified, no new code needed.** Substack feeds
+      are standard RSS 2.0, already covered by existing RSS support.
+      Confirmed live against a real, currently-publishing Substack: feed
+      parsing found 20 items with correct dates, and full-text extraction
+      on a real post pulled a clean 2163-word article. Paywalled posts are
+      naturally excluded (Substack's own feed omits/truncates them for
+      logged-out requests) — no bypass needed or attempted. Also don't need
+      a special weekly-only schedule: daily's dedup-by-URL makes checking a
+      weekly-publishing feed daily just 6 cheap no-op checks, not 6x the
+      load. Documented in README.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →

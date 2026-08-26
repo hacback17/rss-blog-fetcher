@@ -1,18 +1,37 @@
-// One-command local preview: copies the current data/blogs.db, sites.json,
-// and reports/ into web/ (the same files the deploy workflow publishes to
-// Pages) and serves web/ over plain HTTP — so `npm run preview` shows
-// exactly what's actually scraped, without any manual copying.
+// One-command local preview: pulls the latest committed data from GitHub
+// (if it's safe to), copies data/blogs.db, sites.json, and reports/ into
+// web/ (the same files the deploy workflow publishes to Pages), serves
+// web/ over plain HTTP, and opens it in your browser — so `npm run preview`
+// is the *only* thing you need to run to see the current archive.
 //
-// Usage: npm run preview   (from scraper/), then open the printed URL.
+// Usage: npm run preview   (from scraper/)
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
+import { execSync, exec } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..", "..");
 const WEB_DIR = path.join(ROOT, "web");
 const PORT = Number(process.env.PORT) || 8080;
+
+function tryGitPull() {
+  try {
+    const status = execSync("git status --porcelain", { cwd: ROOT, encoding: "utf8" });
+    if (status.trim()) {
+      console.log("Skipping auto-pull: you have local uncommitted changes (nothing was touched).");
+      return;
+    }
+    // --ff-only: only advances if it's a clean fast-forward. Refuses (rather
+    // than merging/rebasing) if history has diverged, so this can't produce
+    // a surprising merge commit or touch the working tree unexpectedly.
+    const result = execSync("git pull --ff-only", { cwd: ROOT, encoding: "utf8" });
+    console.log(result.trim() === "Already up to date." ? "Already up to date with GitHub." : "Pulled latest from GitHub:\n" + result.trim());
+  } catch (err) {
+    console.log("Could not auto-pull (offline, no remote, or diverged history) — showing what's here locally.");
+  }
+}
 
 function copyIfExists(src, dest) {
   if (!fs.existsSync(src)) return false;
@@ -74,9 +93,13 @@ function serve() {
     });
   });
   server.listen(PORT, () => {
-    console.log(`Preview running at http://localhost:${PORT}`);
+    const url = `http://localhost:${PORT}`;
+    console.log(`Preview running at ${url} (Ctrl+C to stop)`);
+    const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+    exec(`${opener} ${url}`, () => {}); // best-effort; fine if this fails (e.g. headless environment)
   });
 }
 
+tryGitPull();
 syncFiles();
 serve();

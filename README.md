@@ -54,6 +54,9 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
 - **Read/unread.** Opening an article marks it read (dot disappears from the
   list); a button in the reader pane lets you mark it unread again. "Unread
   only" checkbox in the toolbar.
+- **Date range filter.** "From"/"To" date pickers in the toolbar constrain
+  every list/search result to that window (combines with search, tag, site,
+  and unread filters — all are ANDed together).
 - **Light/dark toggle.** The 🌓 button in the header cycles
   system → light → dark, remembered per-browser.
 - **Topic graph** — an Obsidian-style interactive graph of tags and how they
@@ -63,6 +66,8 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
   archive" below.
 - **Sources panel** — lists every configured site with the exact sitemap/RSS
   URLs it's using, and links to add/remove a source. See "Adding a source".
+- **Scraping log** — rolling 7-day history of every run, per site, with
+  counts and the actual titles found. See "Scraping log".
 - **Add pasted text or a file** (Data ⇅ menu → "＋ Add pasted text or a
   file") — paste text or load a `.txt`/`.md` file and it's stored as a
   regular article (source "My Notes"): searchable, taggable, and included
@@ -250,6 +255,18 @@ Both Groq's and Gemini's APIs allow direct browser calls (verified this
 directly — no proxy/backend needed, which is what makes a fully static site
 able to do this at all).
 
+**A fourth option that isn't really an "option" so much as a bridge:
+"⧉ Copy prompt".** The ChatGPT and Claude *desktop apps* don't expose a
+local server the way LM Studio/Ollama do, so there's no way for this page to
+call into them directly. Instead, "⧉ Copy prompt" does the same
+retrieval step and builds the same prompt, but puts it on your clipboard
+instead of calling an API — paste it into ChatGPT, Claude, claude.ai, or
+anything else, using whichever of those you already have open, at no
+per-query cost. The prompt itself is also fully editable: ⚙ settings has a
+**"Prompt template"** field (`{{articles}}` / `{{question}}` placeholders)
+used by every provider *and* by "Copy prompt", so your own specially-crafted
+instructions apply everywhere, not just when copying.
+
 ## Respecting robots.txt
 
 Off by default in the sense that matters: **`robots.txt` is respected unless
@@ -320,10 +337,16 @@ command handles both: copies the current database/config/reports into
 ```bash
 cd scraper
 npm run preview
-# open http://localhost:8080
 ```
 
-Re-run it any time after a fresh `npm run run` to refresh the preview.
+This also **pulls the latest data from GitHub first** (a safe `git pull
+--ff-only` — it refuses rather than merging if your local history has
+diverged, and skips entirely if you have uncommitted local changes, so it
+can't clobber anything) and **opens your browser automatically**, so the
+above is the only thing you need to run to see the current archive,
+including whatever the daily Action added since you last looked. Re-run it
+any time; or on macOS, double-click **`preview.command`** at the repo root
+instead of opening a terminal at all.
 
 ## Sites currently tracked
 
@@ -429,6 +452,42 @@ If the URL's site is already configured, the article joins that source; if
 not, it gets its own bucket named after the domain (e.g. `en.wikipedia.org`).
 This writes straight to the real, committed database — unlike "Add pasted
 text", there's no browser-overlay/sync step involved.
+
+### Substack (and other newsletters)
+
+No special handling needed — Substack publications expose a standard RSS
+feed at `https://<publication>.substack.com/feed` (or the equivalent path if
+they've moved to a custom domain), which is exactly what the existing RSS
+support handles. Add it like any other source: `rssUrls: ["https://
+example.substack.com/feed"]` (Option B) or paste that URL into the RSS field
+of the "Add a source" issue form (Option A). Verified this directly against
+a real, currently-publishing Substack — feed parsing and full-text extraction
+both worked cleanly with zero code changes.
+
+Paid-subscriber-only posts are handled correctly by construction, not by any
+special-casing on our end: Substack's own feed simply omits them or includes
+only a preview for logged-out requests, so this naturally only ever picks up
+what's actually publicly published — there's no way (and no attempt) to
+bypass a paywall here.
+
+You also don't need a special once-a-week schedule for a weekly newsletter —
+the daily job already dedupes by URL and by the feed's own per-item
+timestamp, so checking daily for something that publishes weekly just means
+6 cheap "nothing new" checks and 1 real one; it doesn't re-fetch or
+re-extract anything that hasn't changed.
+
+## Scraping log
+
+The 📋 Log button shows a **rolling 7-day log**, one entry per site per run:
+timestamp, status, how many URLs were discovered, how many were new/updated,
+error count, and (click to expand) the actual titles of what was added. This
+is specifically for answering "is scraping still working, and when did it
+last actually find something" without digging through GitHub Actions run
+history — if a source goes quiet for several days running, that's usually a
+sign the site changed something (moved its sitemap, changed its HTML layout)
+rather than the tool simply having nothing new to report. Older entries are
+pruned automatically (each run deletes anything past 7 days), so this stays
+small and fast to load rather than becoming a permanent audit trail.
 
 ## Politeness / not burdening servers
 
