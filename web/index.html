@@ -12,6 +12,7 @@
       <div class="topbar-row">
         <h1>Blog Archive</h1>
         <div class="topbar-actions">
+          <button id="graph-btn" title="Explore as a graph">🕸 Graph</button>
           <button id="ask-btn" title="Ask your archive (AI Q&amp;A)">💬 Ask</button>
           <button id="sources-btn" title="Configured sources">🔗 Sources</button>
           <button id="reports-btn" title="Pattern analysis reports">📊 Reports</button>
@@ -55,6 +56,27 @@
         <br />Opens a pre-filled issue — submitting it does the rest automatically (pulls the first
         batch / removes it, then redeploys). See README "Adding a source".
       </p>
+    </div>
+
+    <div id="graph-backdrop" class="graph-backdrop hidden">
+      <div id="graph-modal" class="graph-modal">
+        <div class="ask-header">
+          <strong id="graph-title">Topic graph</strong>
+          <span id="graph-subtitle" class="graph-subtitle"></span>
+          <button id="graph-back-btn" class="graph-back-btn hidden">← All topics</button>
+          <span class="graph-spacer"></span>
+          <button id="graph-close-btn" title="Close">×</button>
+        </div>
+        <div class="graph-body">
+          <canvas id="graph-canvas"></canvas>
+          <div id="graph-tooltip" class="graph-tooltip hidden"></div>
+          <div id="graph-empty" class="graph-empty hidden">Nothing to show yet — add some tagged articles first.</div>
+          <p class="graph-hint">
+            Drag to pan · scroll/pinch to zoom · drag a node to move it · click a topic to zoom into its
+            articles · click an article to open it
+          </p>
+        </div>
+      </div>
     </div>
 
     <div id="ask-panel" class="ask-panel hidden">

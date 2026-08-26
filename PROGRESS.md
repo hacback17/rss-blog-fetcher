@@ -229,6 +229,62 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       `--delete-articles`, and its "not found" error path. All test data
       removed / reverted before committing.
 
+## Done — v6 (Pages deploy fix, topic graph)
+- [x] **Fixed the Pages deploy failure** the user hit on a real run
+      (`git' failed with exit code 128` / `repository ... not found` during
+      checkout). Root cause: declaring a `permissions:` block at all
+      *replaces* the default token permissions rather than adding to them —
+      the deploy job's `{pages: write, id-token: write}` (added when the
+      "publish to Pages" steps were factored into a shared reusable
+      workflow) silently zeroed out `contents`, which `actions/checkout`
+      needs. Added `contents: read` everywhere the reusable `deploy.yml` is
+      declared or called (6 files). Confirmed via the user's own screenshot
+      this was the actual failure, not user error.
+- [x] **Topic graph**: 🕸 Graph button opens an Obsidian-style interactive
+      graph — tags as nodes (sized by article count), edges = co-occurrence,
+      click a tag to drill into an article-level graph for it (edges = other
+      shared tags), click an article to open it in the reader. Hand-rolled
+      canvas force simulation (`web/graph.js`, no charting library),
+      drag/pan/zoom, theme-aware (reads CSS custom properties live). Chose
+      tag-level (not article-level) as the default specifically because the
+      tag vocabulary was already deliberately kept small — an all-1200+-
+      articles graph would be unreadable, but tags are exactly the layer
+      designed to avoid that.
+- [x] Computed entirely live from `tags`/`article_tags` on every open — no
+      precomputation or sync step, so it automatically reflects whatever's
+      been scraped/tagged/added, including this session's new features
+      (custom pasted text, articles added by URL).
+- [x] Found and fixed two real bugs while building this, both through live
+      testing against the real ~1200-article/42-tag database (not
+      hypothetical — the UI genuinely rendered a blank canvas on drill-down
+      until both were fixed):
+      1. Tag ids and article ids are both plain autoincrement integers from
+         different tables, so they numerically collide (e.g. tag id 812 vs
+         article id 812) — the graph's node-position-reuse logic (keyed
+         only by raw numeric id) matched a tag's stale node object onto an
+         article with the same id when switching between the two graph
+         modes, and since that stale node could itself have been corrupted
+         (see next bug), positions came through as `null`/`NaN`. Fixed by
+         namespacing node ids (`t${id}` / `a${id}`) so the two graph modes
+         can never collide.
+      2. Drilling into a common tag (e.g. "Water Crisis," 163 articles) produced
+         a near-complete graph (10,000+ edges, since most of those articles
+         also share 1+ other tags) — dense enough that repulsion and spring
+         forces fed back into each other and positions overflowed to
+         `Infinity`/`NaN` within a few ticks, silently rendering nothing.
+         Fixed two ways: excluded the trivial "connected only via the tag
+         you're drilling into" edges and required 2+ *other* shared tags
+         (cuts a real near-complete graph down to real substructure, not
+         just fewer edges), and added a hard per-tick force/velocity clamp
+         in the simulation itself as a general safety net — the second fix
+         matters for any dense graph, not just this specific case.
+- [x] Verified live end-to-end after both fixes: tag graph renders correctly
+      with real clustering, drilling into "Water Crisis" produces a valid
+      layout (0 non-finite positions, down from 163/163), back button
+      returns to tag view, clicking an article node closes the graph and
+      opens the correct article in the reader (confirmed via title match),
+      and the whole graph re-renders correctly in both themes.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →

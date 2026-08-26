@@ -12,7 +12,7 @@ on GitHub Actions — no laptop required.
 scraper/                Node.js: sitemap/RSS discovery → full-article extraction → SQLite → auto-tag
 data/blogs.db            the SQLite database (committed to the repo by the Action)
 reports/                 Markdown pattern-analysis reports (see "Intelligence-style pattern analysis")
-web/                     static reader + Ask-your-archive UI, runs entirely in the browser (no backend)
+web/                     static reader + topic graph + Ask-your-archive UI, runs in the browser (no backend)
 .github/ISSUE_TEMPLATE/   add-site.yml, add-article.yml, remove-site.yml issue forms
 .github/workflows/
   scrape-and-deploy.yml    daily cron + manual "Run workflow" button
@@ -56,6 +56,9 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
   only" checkbox in the toolbar.
 - **Light/dark toggle.** The 🌓 button in the header cycles
   system → light → dark, remembered per-browser.
+- **Topic graph** — an Obsidian-style interactive graph of tags and how they
+  co-occur, drilling into an article-level graph per tag. See "Topic graph"
+  below.
 - **Ask your archive** — an AI Q&A chat over your own data, see "Ask your
   archive" below.
 - **Sources panel** — lists every configured site with the exact sitemap/RSS
@@ -191,6 +194,27 @@ date, limit). It commits the report back to `reports/`. Locally:
 cd scraper
 GEMINI_API_KEY=... npm run analyze -- --tag="Water Crisis" --since=2024-01-01
 ```
+
+## Topic graph
+
+The 🕸 Graph button opens an Obsidian-style interactive graph — but of
+**tags**, not individual articles: with a thousand-plus articles, a graph of
+every article as its own node is an unreadable hairball, while the tag
+vocabulary is deliberately kept small (see "Auto-tagging"), so it's the level
+that actually shows structure. Nodes are tags sized by how many articles
+carry them; edges connect tags that co-occur on the same articles, weighted
+by how often. It's computed live from `tags`/`article_tags` on every open —
+there's nothing to precompute or keep in sync, so it automatically reflects
+whatever's been scraped/tagged/added so far, no rebuild step.
+
+Click a tag to zoom into just its articles, laid out the same way — nodes are
+articles, edges connect ones that share *other* tags beyond the one you
+zoomed into (so within "Water Crisis," articles that are also tagged
+"Agriculture" cluster together, separately from ones also tagged "Disaster &
+Extreme Weather"). Click an article node to open it in the reader. Drag to
+pan, scroll/pinch to zoom, drag a node to reposition it — it's a small
+hand-rolled canvas force simulation (no charting library), themed to match
+light/dark mode.
 
 ## Ask your archive
 

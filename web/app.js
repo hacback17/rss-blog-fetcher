@@ -1,4 +1,5 @@
 import sqlite3InitModule from "./vendor/sqlite3.mjs";
+import { ForceGraph } from "./graph.js";
 
 const PAGE_SIZE = 40;
 const DB_URL = "data/blogs.db";
@@ -35,6 +36,8 @@ const els = {};
   "ask-local-model", "ask-messages", "ask-form", "ask-input",
   "add-text-btn", "add-text-backdrop", "add-text-modal", "add-text-close-btn", "add-text-title",
   "add-text-file-input", "add-text-body-input", "add-text-save-btn",
+  "graph-btn", "graph-backdrop", "graph-modal", "graph-title", "graph-subtitle", "graph-back-btn",
+  "graph-close-btn", "graph-canvas", "graph-tooltip", "graph-empty",
 ].forEach((id) => {
   els[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
 });
@@ -310,6 +313,7 @@ function wireEvents() {
 
   wireAskPanel();
   wireAddTextModal();
+  wireGraph();
 }
 
 // ---------- add pasted text / file ----------
@@ -639,6 +643,146 @@ function removeManualTagUi(row, name) {
   removeTagFromDb(state.db, row.id, name);
   renderTags(row);
   populateTagList();
+}
+
+// ---------- graph ----------
+
+let forceGraph = null;
+const graphState = { mode: "tags", tagId: 0 };
+
+function wireGraph() {
+  els.graphBtn.addEventListener("click", () => {
+    els.graphBackdrop.classList.remove("hidden");
+    if (!forceGraph) {
+      forceGraph = new ForceGraph(els.graphCanvas, {
+        onNodeClick: handleGraphNodeClick,
+        onHoverChange: handleGraphHover,
+      });
+    }
+    showTagGraph();
+  });
+
+  els.graphCloseBtn.addEventListener("click", () => els.graphBackdrop.classList.add("hidden"));
+  els.graphBackdrop.addEventListener("click", (e) => {
+    if (e.target === els.graphBackdrop) els.graphBackdrop.classList.add("hidden");
+  });
+  els.graphBackBtn.addEventListener("click", showTagGraph);
+}
+
+function handleGraphNodeClick(node) {
+  if (graphState.mode === "tags") {
+    showArticleGraphForTag(node.refId, node.label);
+  } else {
+    els.graphBackdrop.classList.add("hidden");
+    const li = els.articleList.querySelector(`li[data-id="${node.refId}"]`);
+    selectArticle(node.refId, li);
+  }
+}
+
+function handleGraphHover(node, clientX, clientY) {
+  if (!node) {
+    els.graphTooltip.classList.add("hidden");
+    return;
+  }
+  const bodyRect = els.graphCanvas.parentElement.getBoundingClientRect();
+  els.graphTooltip.style.left = `${clientX - bodyRect.left + 12}px`;
+  els.graphTooltip.style.top = `${clientY - bodyRect.top + 12}px`;
+  els.graphTooltip.textContent =
+    graphState.mode === "tags" ? `${node.label} — ${node.count} article(s)` : node.label;
+  els.graphTooltip.classList.remove("hidden");
+}
+
+function showTagGraph() {
+  graphState.mode = "tags";
+  graphState.tagId = 0;
+  els.graphBackBtn.classList.add("hidden");
+  els.graphTitle.textContent = "Topic graph";
+
+  const rawNodes = queryAll(
+    state.db,
+    `SELECT t.id, t.name AS label, COUNT(*) AS count
+     FROM tags t JOIN article_tags at ON at.tag_id = t.id
+     GROUP BY t.id ORDER BY count DESC`
+  );
+  const rawEdges = queryAll(
+    state.db,
+    `SELECT at1.tag_id AS source, at2.tag_id AS target, COUNT(*) AS weight
+     FROM article_tags at1 JOIN article_tags at2
+       ON at1.article_id = at2.article_id AND at1.tag_id < at2.tag_id
+     GROUP BY at1.tag_id, at2.tag_id`
+  );
+
+  // Node ids are namespaced ("t"+id) because tag ids and article ids are both
+  // plain autoincrement integers from different tables — without a prefix
+  // they can (and do) collide numerically between this graph and the
+  // article-level one, corrupting the force layout's node-reuse logic.
+  const nodes = rawNodes.map((n) => ({ id: `t${n.id}`, refId: n.id, label: n.label, count: n.count }));
+  const edges = rawEdges.map((e) => ({ source: `t${e.source}`, target: `t${e.target}`, weight: e.weight }));
+
+  els.graphSubtitle.textContent = `${nodes.length} topics — click one to see its articles`;
+  els.graphEmpty.classList.toggle("hidden", nodes.length > 0);
+  forceGraph.setData(nodes, edges);
+}
+
+function showArticleGraphForTag(tagId, tagName) {
+  graphState.mode = "articles";
+  graphState.tagId = tagId;
+  els.graphBackBtn.classList.remove("hidden");
+  els.graphTitle.textContent = tagName;
+
+  const rawArticles = queryAll(
+    state.db,
+    `SELECT a.id, a.title AS label, a.word_count AS count
+     FROM articles a JOIN article_tags at ON at.article_id = a.id
+     WHERE at.tag_id = $tagId
+     ORDER BY COALESCE(a.published_at, a.fetched_at) DESC LIMIT 200`,
+    { $tagId: tagId }
+  );
+
+  let rawEdges = [];
+  if (rawArticles.length > 1) {
+    const ids = rawArticles.map((a) => a.id);
+    const { clause, params } = buildIdInClause(ids, "id");
+    // Every article here already shares $tagId by construction, so that
+    // overlap alone is excluded — weight counts *other* shared tags, which
+    // is what actually distinguishes closely- vs loosely-related articles
+    // within this set. Without excluding it, a big tag produces a near-
+    // complete graph (every pair "connected" via the trivial shared tag),
+    // which both looks like a hairball and is expensive to lay out.
+    // Also require at least 2 other shared tags (not just 1) — with a
+    // handful of tags per article, requiring only 1 still leaves the graph
+    // dense enough to look like an undifferentiated blob rather than
+    // showing real substructure.
+    rawEdges = queryAll(
+      state.db,
+      `SELECT at1.article_id AS source, at2.article_id AS target, COUNT(*) AS weight
+       FROM article_tags at1 JOIN article_tags at2
+         ON at1.tag_id = at2.tag_id AND at1.article_id < at2.article_id
+       WHERE at1.article_id IN (${clause}) AND at2.article_id IN (${clause})
+         AND at1.tag_id != $tagId
+       GROUP BY at1.article_id, at2.article_id
+       HAVING weight >= 2`,
+      { ...params, $tagId: tagId }
+    );
+  }
+
+  // See showTagGraph() for why node ids need an "a"-prefix namespace here.
+  const nodes = rawArticles.map((a) => ({ id: `a${a.id}`, refId: a.id, label: a.label, count: a.count }));
+  const edges = rawEdges.map((e) => ({ source: `a${e.source}`, target: `a${e.target}`, weight: e.weight }));
+
+  els.graphSubtitle.textContent = `${nodes.length} article(s) — click one to open it`;
+  els.graphEmpty.classList.toggle("hidden", nodes.length > 0);
+  forceGraph.setData(nodes, edges);
+}
+
+function buildIdInClause(ids, prefix) {
+  const params = {};
+  const placeholders = ids.map((id, i) => {
+    const key = `$${prefix}${i}`;
+    params[key] = id;
+    return key;
+  });
+  return { clause: placeholders.join(","), params };
 }
 
 // ---------- reports ----------
