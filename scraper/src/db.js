@@ -276,6 +276,24 @@ export function setReadAt(db, articleId, iso) {
   db.prepare("UPDATE articles SET read_at = ? WHERE id = ?").run(iso, articleId);
 }
 
+// Mirrors web/app.js's insertCustomArticleToDb() — same shape, same
+// site_id='custom' convention, so pasted/imported text added in the
+// browser and synced via apply-overlay.js ends up identical to text added
+// there directly. Content is stored as plain paragraphs (no HTML source to
+// preserve, unlike scraped articles).
+export function insertCustomArticle(db, url, { title, contentText, addedAt }) {
+  const wordCount = contentText.split(/\s+/).filter(Boolean).length;
+  const html = contentText
+    .split(/\n{2,}/)
+    .map((para) => `<p>${para.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}</p>`)
+    .join("\n");
+  db.prepare(
+    `INSERT OR IGNORE INTO articles
+      (site_id, site_name, url, title, published_at, fetched_at, updated_at, content_html, content_text, excerpt, word_count)
+     VALUES ('custom', 'My Notes', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(url, title, addedAt, addedAt, addedAt, html, contentText, contentText.slice(0, 280), wordCount);
+}
+
 export function recordSiteRun(db, siteId, stats) {
   db.prepare(
     `INSERT INTO site_runs (site_id, last_run_at, last_status, urls_in_sitemap, new_articles, updated_articles, errors)

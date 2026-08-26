@@ -33,6 +33,8 @@ const els = {};
   "ask-btn", "ask-panel", "ask-settings-btn", "ask-close-btn", "ask-settings", "ask-provider",
   "ask-key-row", "ask-api-key", "ask-local-url-row", "ask-local-url", "ask-local-model-row",
   "ask-local-model", "ask-messages", "ask-form", "ask-input",
+  "add-text-btn", "add-text-backdrop", "add-text-modal", "add-text-close-btn", "add-text-title",
+  "add-text-file-input", "add-text-body-input", "add-text-save-btn",
 ].forEach((id) => {
   els[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
 });
@@ -57,9 +59,10 @@ function loadOverlay() {
       unread: parsed.unread || [],
       manualTags: parsed.manualTags || {},
       removedManualTags: parsed.removedManualTags || {},
+      customArticles: parsed.customArticles || {},
     };
   } catch {
-    return { read: {}, unread: [], manualTags: {}, removedManualTags: {} };
+    return { read: {}, unread: [], manualTags: {}, removedManualTags: {}, customArticles: {} };
   }
 }
 
@@ -68,6 +71,9 @@ function saveOverlay(overlay) {
 }
 
 function applyOverlayToDb(db, overlay) {
+  for (const [url, entry] of Object.entries(overlay.customArticles || {})) {
+    insertCustomArticleToDb(db, url, entry);
+  }
   for (const [url, iso] of Object.entries(overlay.read)) {
     db.exec({ sql: "UPDATE articles SET read_at = $iso WHERE url = $url", bind: { $iso: iso, $url: url } });
   }
@@ -84,6 +90,34 @@ function applyOverlayToDb(db, overlay) {
     if (!row) continue;
     for (const name of names) removeTagFromDb(db, row.id, name);
   }
+}
+
+// Pasted/imported text is stored as a regular article (site_id='custom') so
+// it's searchable, taggable, and shows up in "Ask your archive" retrieval
+// exactly like scraped content — no special-casing needed anywhere else.
+function insertCustomArticleToDb(db, url, entry) {
+  const wordCount = entry.contentText.split(/\s+/).filter(Boolean).length;
+  db.exec({
+    sql: `INSERT OR IGNORE INTO articles
+      (site_id, site_name, url, title, published_at, fetched_at, updated_at, content_html, content_text, excerpt, word_count)
+      VALUES ('custom', 'My Notes', $url, $title, $addedAt, $addedAt, $addedAt, $html, $text, $excerpt, $wordCount)`,
+    bind: {
+      $url: url,
+      $title: entry.title,
+      $addedAt: entry.addedAt,
+      $html: textToHtml(entry.contentText),
+      $text: entry.contentText,
+      $excerpt: entry.contentText.slice(0, 280),
+      $wordCount: wordCount,
+    },
+  });
+}
+
+function textToHtml(text) {
+  return text
+    .split(/\n{2,}/)
+    .map((para) => `<p>${escapeHtml(para).replaceAll("\n", "<br>")}</p>`)
+    .join("\n");
 }
 
 function addTagToDb(db, articleId, name, source) {
@@ -159,6 +193,10 @@ async function init() {
 }
 
 function populateSiteFilter() {
+  // Re-callable (e.g. after adding custom text introduces a new site_id),
+  // so rebuild from scratch rather than appending on top of last time.
+  const currentValue = els.siteFilter.value;
+  els.siteFilter.innerHTML = '<option value="">All sources</option>';
   const rows = queryAll(state.db, "SELECT DISTINCT site_id, site_name FROM articles ORDER BY site_name");
   for (const row of rows) {
     const opt = document.createElement("option");
@@ -166,6 +204,7 @@ function populateSiteFilter() {
     opt.textContent = row.site_name;
     els.siteFilter.appendChild(opt);
   }
+  els.siteFilter.value = currentValue;
 }
 
 function populateTagList() {
@@ -270,6 +309,66 @@ function wireEvents() {
   els.exportSourcesBtn.addEventListener("click", exportSourcesConfig);
 
   wireAskPanel();
+  wireAddTextModal();
+}
+
+// ---------- add pasted text / file ----------
+
+function wireAddTextModal() {
+  const open = () => {
+    els.dataMenu.classList.add("hidden");
+    els.addTextBackdrop.classList.remove("hidden");
+    els.addTextTitle.focus();
+  };
+  const close = () => {
+    els.addTextBackdrop.classList.add("hidden");
+    els.addTextTitle.value = "";
+    els.addTextBodyInput.value = "";
+    els.addTextFileInput.value = "";
+  };
+
+  els.addTextBtn.addEventListener("click", open);
+  els.addTextCloseBtn.addEventListener("click", close);
+  els.addTextBackdrop.addEventListener("click", (e) => {
+    if (e.target === els.addTextBackdrop) close();
+  });
+
+  els.addTextFileInput.addEventListener("change", () => {
+    const file = els.addTextFileInput.files[0];
+    if (!file) return;
+    if (!els.addTextTitle.value.trim()) {
+      els.addTextTitle.value = file.name.replace(/\.(txt|md)$/i, "");
+    }
+    const reader = new FileReader();
+    reader.onload = () => { els.addTextBodyInput.value = reader.result; };
+    reader.readAsText(file);
+  });
+
+  els.addTextSaveBtn.addEventListener("click", () => {
+    const title = els.addTextTitle.value.trim();
+    const text = els.addTextBodyInput.value.trim();
+    if (!title || !text) {
+      alert("Add both a title and some text first.");
+      return;
+    }
+    addCustomArticle(title, text);
+    close();
+  });
+}
+
+function addCustomArticle(title, text) {
+  const url = `custom://${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const addedAt = new Date().toISOString();
+  const entry = { title, contentText: text, addedAt };
+
+  const overlay = loadOverlay();
+  overlay.customArticles[url] = entry;
+  saveOverlay(overlay);
+
+  insertCustomArticleToDb(state.db, url, entry);
+  populateSiteFilter();
+  populateTagList();
+  runQuery();
 }
 
 // ---------- query helpers ----------

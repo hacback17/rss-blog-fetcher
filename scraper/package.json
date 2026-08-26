@@ -9,7 +9,8 @@
   "scripts": {
     "run": "node --experimental-sqlite src/run.js",
     "apply-overlay": "node --experimental-sqlite src/apply-overlay.js",
-    "analyze": "node --experimental-sqlite src/analyze-patterns.js"
+    "analyze": "node --experimental-sqlite src/analyze-patterns.js",
+    "preview": "node src/preview.js"
   },
   "dependencies": {
     "@mozilla/readability": "^0.5.0",

@@ -150,6 +150,44 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       sitemap auto-discovery), and the full scraper run with the new
       robots-toggle/RSS/keywords code paths — all clean, no regressions.
 
+## Done — v4 (local preview fix, paste/import text)
+- [x] User reported local preview showing "SQLITE_CANTOPEN" with no data —
+      expected: `web/data/` and `web/reports/` are gitignored dev-convenience
+      copies that only exist on whichever machine ran the scraper/tests, not
+      the user's fresh clone. Fixed properly instead of just explaining it:
+      added `npm run preview` (`scraper/src/preview.js`) which copies
+      `data/blogs.db` + `sites.json` + `reports/` into `web/` and serves it
+      with a small built-in static server (correct MIME types, no `python3`
+      dependency) — one command instead of manual copying. Verified working
+      end-to-end from a clean state (deleted `web/data/` and `web/reports/`
+      first, confirmed the command recreates both).
+- [x] Verified no duplicate content: 983 rows, 983 distinct URLs (`url` has
+      a UNIQUE constraint, so it's structurally impossible, but checked the
+      real numbers anyway). The 983 count comes from several backfill runs
+      across the session (each capped at 80 new articles/site/run) — that's
+      genuine growth, not duplication. Also spot-checked the 16 same-
+      title/site pairs that do exist: different URLs, different
+      content_hash, different word counts — CSE India reusing templated
+      titles for similar event pages, not the same article twice.
+- [x] **Paste/import text**: Data ⇅ → "＋ Add pasted text or a file" opens a
+      modal (title + textarea, or load a `.txt`/`.md` file into the
+      textarea). Saves as a regular article (`site_id='custom'`, "My
+      Notes") — searchable, taggable, and included in "Ask your archive"
+      retrieval with zero special-casing anywhere else, since it's just
+      another row with the same schema. Mirrored the insert logic on both
+      sides: `web/app.js` (live, in-browser) and `scraper/src/db.js`'s new
+      `insertCustomArticle()` (used by `apply-overlay.js` to sync it into
+      the permanent database). Found and fixed a real bug while wiring this
+      up: `populateSiteFilter()` wasn't idempotent — calling it a second
+      time (now needed after adding custom text introduces a new
+      `site_id`) would have duplicated every `<option>` in the site
+      filter dropdown. Verified live end-to-end: added a real note through
+      the actual UI, confirmed it appeared in FTS5 search with highlighting,
+      rendered correctly in the reader pane, and persisted to the
+      localStorage overlay — and separately verified the Node-side
+      `apply-overlay.js` path against the real database (then removed that
+      test row before committing).
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →

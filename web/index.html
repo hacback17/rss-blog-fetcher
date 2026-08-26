@@ -101,6 +101,8 @@
 
     <div id="data-menu" class="data-menu hidden">
       <strong>Export / import</strong>
+      <button id="add-text-btn">＋ Add pasted text or a file</button>
+      <hr />
       <button id="export-db-btn">⬇ Download full database (.db)</button>
       <button id="export-jsonl-btn">⬇ Export JSONL (for LLM analysis)</button>
       <hr />
@@ -109,9 +111,36 @@
         <input type="file" id="import-overlay-input" accept="application/json" hidden />
       </label>
       <p class="data-menu-hint">
-        Read status and manually-added tags live in this browser only. Export them before switching
-        devices/browsers, or to merge them permanently into the database — see README "Syncing state".
+        Read status, manually-added tags, and added text live in this browser only. Export them before
+        switching devices/browsers, or to merge them permanently into the database — see README
+        "Syncing state".
       </p>
+    </div>
+
+    <div id="add-text-backdrop" class="add-text-backdrop hidden">
+      <div id="add-text-modal" class="add-text-modal">
+        <div class="ask-header">
+          <strong>Add text or a file</strong>
+          <button id="add-text-close-btn" title="Close">×</button>
+        </div>
+        <div class="add-text-body">
+          <label>Title
+            <input type="text" id="add-text-title" placeholder="e.g. Meeting notes, a report excerpt..." />
+          </label>
+          <label class="file-import-label">⬆ Load from a .txt/.md file instead
+            <input type="file" id="add-text-file-input" accept=".txt,.md,text/plain,text/markdown" hidden />
+          </label>
+          <label>Text
+            <textarea id="add-text-body-input" rows="10" placeholder="Paste or type text here…"></textarea>
+          </label>
+          <p class="data-menu-hint">
+            Stored alongside scraped articles — searchable, taggable, and included in "Ask your
+            archive" just like everything else. Lives in this browser only until exported/synced (see
+            README "Where read/tags/manual edits actually live").
+          </p>
+          <button id="add-text-save-btn" class="primary-btn">Add to archive</button>
+        </div>
+      </div>
     </div>
 
     <main class="layout">

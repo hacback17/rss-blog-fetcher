@@ -58,6 +58,14 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
   archive" below.
 - **Sources panel** — lists every configured site with the exact sitemap/RSS
   URLs it's using, and an export button. See "Adding a source".
+- **Add pasted text or a file** (Data ⇅ menu → "＋ Add pasted text or a
+  file") — paste text or load a `.txt`/`.md` file and it's stored as a
+  regular article (source "My Notes"): searchable, taggable, and included
+  in "Ask your archive" retrieval exactly like scraped content. Useful for
+  folding in a report, a meeting note, or anything else you want the
+  archive (and its AI Q&A) to know about that isn't published anywhere
+  scrapable. Lives in the browser overlay like read/tag state — see
+  "Where read/tags/manual edits actually live" for making it durable.
 - **Export/import**, see "Portability" below.
 - **Pattern analysis**, see "Intelligence-style pattern analysis" below.
 
@@ -116,12 +124,13 @@ to write back to. The split:
 
 - **Auto-tags** are written by the scraper into `data/blogs.db` directly —
   durable, synced everywhere, as soon as the daily Action runs.
-- **Read/unread state and manually-added tags** are interactive, so they're
-  written straight into the in-memory database your browser already loaded
-  (instantly reflected everywhere in the UI — unread counts, tag sidebar,
-  filters) *and* mirrored into an "overlay" in that browser's `localStorage`
-  so they survive a page reload. This overlay is **per-browser** — it does
-  not sync itself to other devices or back into the committed database.
+- **Read/unread state, manually-added tags, and pasted/imported text** are
+  all interactive, so they're written straight into the in-memory database
+  your browser already loaded (instantly reflected everywhere in the UI —
+  unread counts, tag sidebar, filters, search) *and* mirrored into an
+  "overlay" in that browser's `localStorage` so they survive a page reload.
+  This overlay is **per-browser** — it does not sync itself to other
+  devices or back into the committed database.
 
 To make browser-side changes durable/shared: **Data ⇅ menu → "Export my
 read/tag state"** downloads a small JSON file. Either keep re-importing it on
@@ -262,15 +271,25 @@ npm install
 npm run run
 ```
 
-This updates `data/blogs.db` in place. Open `web/index.html` via a local
-static server (not `file://`, since the browser needs to `fetch()` the `.db`
-file) to preview:
+This updates `data/blogs.db` in place.
+
+**To preview locally:** `web/` is served from GitHub Pages in production,
+which is a different origin than your local files — a browser opened
+straight at `web/index.html` (a `file://` URL) can't `fetch()` the database,
+sites config, or reports next to it (that's the "Failed to load database:
+SQLITE_CANTOPEN" error if you've hit it), and those files aren't checked
+into git in the first place (`web/data/`, `web/reports/` are gitignored —
+only `data/blogs.db` and `reports/` at the repo root are tracked). One
+command handles both: copies the current database/config/reports into
+`web/` and serves it:
 
 ```bash
-cd web
-python3 -m http.server 8000
-# open http://localhost:8000
+cd scraper
+npm run preview
+# open http://localhost:8080
 ```
+
+Re-run it any time after a fresh `npm run run` to refresh the preview.
 
 ## Sites currently tracked
 

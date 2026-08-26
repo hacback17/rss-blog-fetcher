@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { openDb, getArticleByUrl, setReadAt, addManualTag, removeManualTag } from "./db.js";
+import { openDb, getArticleByUrl, setReadAt, addManualTag, removeManualTag, insertCustomArticle } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..", "..");
@@ -38,6 +38,11 @@ function main() {
       applied++;
     }
   };
+
+  for (const [url, entry] of Object.entries(overlay.customArticles || {})) {
+    insertCustomArticle(db, url, entry);
+    applied++;
+  }
 
   forEachUrl(overlay.read, (row, iso) => setReadAt(db, row.id, iso));
   for (const url of overlay.unread || []) {
