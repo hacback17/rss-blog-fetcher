@@ -31,11 +31,37 @@ function initSchema(db) {
       excerpt TEXT,
       lead_image TEXT,
       word_count INTEGER,
-      content_hash TEXT
+      content_hash TEXT,
+      -- NULL = unread. The scraper never touches this column; it's only
+      -- ever written by applyOverlay() (see apply-overlay.js), which merges
+      -- read/unread state exported from the browser back into the source
+      -- of truth. See tags/article_tags below for the same pattern.
+      read_at TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_articles_site ON articles(site_id);
     CREATE INDEX IF NOT EXISTS idx_articles_published ON articles(published_at);
+
+    -- Tags are a many-to-many label, not a duplicated grouping: one row per
+    -- distinct tag name, joined to articles via article_tags so an article
+    -- can carry several tags without its content being copied anywhere.
+    CREATE TABLE IF NOT EXISTS tags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE
+    );
+
+    CREATE TABLE IF NOT EXISTS article_tags (
+      article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+      tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+      -- 'auto' rows are fully owned by the scraper's auto-tagger and get
+      -- replaced wholesale on each re-tag; 'manual' rows are only ever
+      -- written by applyOverlay() from a user's browser-side edits and the
+      -- scraper never removes them.
+      source TEXT NOT NULL CHECK (source IN ('auto', 'manual')),
+      PRIMARY KEY (article_id, tag_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_article_tags_tag ON article_tags(tag_id);
 
     CREATE TABLE IF NOT EXISTS sitemap_state (
       url TEXT PRIMARY KEY,
@@ -90,6 +116,18 @@ function initSchema(db) {
       VALUES (new.id, new.title, new.content_text, new.author);
     END;
   `);
+
+  migrateColumns(db);
+}
+
+// CREATE TABLE IF NOT EXISTS is a no-op against a table that already exists
+// from before this column was added, so new columns need an explicit,
+// idempotent ALTER TABLE migration.
+function migrateColumns(db) {
+  const columns = db.prepare("PRAGMA table_info(articles)").all().map((c) => c.name);
+  if (!columns.includes("read_at")) {
+    db.exec("ALTER TABLE articles ADD COLUMN read_at TEXT");
+  }
 }
 
 export function getSitemapState(db, url) {
@@ -149,6 +187,48 @@ export function upsertArticle(db, article) {
      WHERE url = @url`
   ).run({ ...article, updatedAt: now });
   return "updated";
+}
+
+function upsertTag(db, name) {
+  db.prepare("INSERT INTO tags (name) VALUES (?) ON CONFLICT(name) DO NOTHING").run(name);
+  return db.prepare("SELECT id FROM tags WHERE name = ?").get(name).id;
+}
+
+export function listExistingTagNames(db, limit = 60) {
+  return db
+    .prepare(
+      `SELECT t.name, COUNT(*) c FROM tags t
+       JOIN article_tags at ON at.tag_id = t.id
+       GROUP BY t.id ORDER BY c DESC LIMIT ?`
+    )
+    .all(limit)
+    .map((r) => r.name);
+}
+
+// Replaces this article's *auto* tags wholesale (source='auto'); manual
+// tags (added via applyOverlay from the browser) are never touched here.
+export function setAutoTags(db, articleId, tagNames) {
+  db.prepare("DELETE FROM article_tags WHERE article_id = ? AND source = 'auto'").run(articleId);
+  const insert = db.prepare("INSERT INTO article_tags (article_id, tag_id, source) VALUES (?, ?, 'auto') ON CONFLICT DO NOTHING");
+  for (const name of tagNames.slice(0, 5)) {
+    const tagId = upsertTag(db, name);
+    insert.run(articleId, tagId);
+  }
+}
+
+export function addManualTag(db, articleId, name) {
+  const tagId = upsertTag(db, name);
+  db.prepare("INSERT INTO article_tags (article_id, tag_id, source) VALUES (?, ?, 'manual') ON CONFLICT DO NOTHING").run(articleId, tagId);
+}
+
+export function removeManualTag(db, articleId, name) {
+  const row = db.prepare("SELECT id FROM tags WHERE name = ?").get(name);
+  if (!row) return;
+  db.prepare("DELETE FROM article_tags WHERE article_id = ? AND tag_id = ? AND source = 'manual'").run(articleId, row.id);
+}
+
+export function setReadAt(db, articleId, iso) {
+  db.prepare("UPDATE articles SET read_at = ? WHERE id = ?").run(iso, articleId);
 }
 
 export function recordSiteRun(db, siteId, stats) {

@@ -5,4 +5,5 @@ _site/
 data/blogs.db-wal
 data/blogs.db-shm
 web/data/
+web/reports/
 .claude/scheduled_tasks.lock

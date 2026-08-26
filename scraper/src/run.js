@@ -8,11 +8,15 @@ import {
   getSitemapFileState,
   upsertSitemapFileState,
   upsertArticle,
+  getArticleByUrl,
+  setAutoTags,
+  listExistingTagNames,
   recordSiteRun,
 } from "./db.js";
 import { fetchRobotsRules, isPathAllowed } from "./robots.js";
 import { fetchSitemapLevel } from "./sitemap.js";
 import { extractArticle } from "./extract.js";
+import { generateTags } from "./autotag.js";
 import { runPool, matchesSite, sha256 } from "./util.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -142,6 +146,16 @@ async function processSite(db, site) {
 
         if (result === "inserted") stats.newArticles++;
         if (result === "updated") stats.updatedArticles++;
+
+        if (result === "inserted" || result === "updated") {
+          try {
+            const row = getArticleByUrl(db, entry.loc);
+            const tags = await generateTags(article, listExistingTagNames(db));
+            setAutoTags(db, row.id, tags);
+          } catch (tagErr) {
+            console.warn(`  ! auto-tagging failed for ${entry.loc}: ${tagErr.message}`);
+          }
+        }
 
         upsertSitemapState(db, { url: entry.loc, siteId: site.id, lastmod: entry.lastmod });
         console.log(`  [${result}] ${article.title || entry.loc}`);
