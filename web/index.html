@@ -50,8 +50,10 @@
       <ul id="sources-list" class="sources-list"></ul>
       <button id="export-sources-btn">⬇ Export sources config (sites.json)</button>
       <p class="data-menu-hint">
-        To add a new site: open a "Add a source" issue on the repo's Issues tab — it pulls the first
-        batch automatically, then joins the daily run. See README "Adding a source".
+        <a href="https://github.com/hacback17/rss-blog-fetcher/issues/new?template=add-site.yml" target="_blank" rel="noopener noreferrer">+ Add a source</a>
+        · <a href="https://github.com/hacback17/rss-blog-fetcher/issues/new?template=remove-site.yml" target="_blank" rel="noopener noreferrer">− Remove a source</a>
+        <br />Opens a pre-filled issue — submitting it does the rest automatically (pulls the first
+        batch / removes it, then redeploys). See README "Adding a source".
       </p>
     </div>
 
@@ -102,6 +104,7 @@
     <div id="data-menu" class="data-menu hidden">
       <strong>Export / import</strong>
       <button id="add-text-btn">＋ Add pasted text or a file</button>
+      <a class="menu-link-btn" href="https://github.com/hacback17/rss-blog-fetcher/issues/new?template=add-article.yml" target="_blank" rel="noopener noreferrer">＋ Add article(s) by URL ↗</a>
       <hr />
       <button id="export-db-btn">⬇ Download full database (.db)</button>
       <button id="export-jsonl-btn">⬇ Export JSONL (for LLM analysis)</button>

@@ -7,39 +7,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverSitemapUrls } from "./robots.js";
+import { parseIssueFields, splitList, slugify } from "./issue-utils.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = path.join(__dirname, "..", "config", "sites.json");
 
-// GitHub renders each Issue Form field as "### <label>\n\n<value>\n\n",
-// with "_No response_" standing in for an empty optional field.
-function parseFields(body) {
-  const fields = {};
-  const parts = body.split(/^### /m).slice(1);
-  for (const part of parts) {
-    const newlineIdx = part.indexOf("\n");
-    const label = part.slice(0, newlineIdx).trim();
-    let value = part.slice(newlineIdx + 1).trim();
-    if (value === "_No response_") value = "";
-    fields[label] = value;
-  }
-  return fields;
-}
-
-function splitList(value) {
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function slugify(str) {
-  return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "site";
-}
-
 async function main() {
   const body = fs.readFileSync(0, "utf8");
-  const fields = parseFields(body);
+  const fields = parseIssueFields(body);
 
   const name = fields["Display name"];
   const baseUrl = fields["Base URL"];

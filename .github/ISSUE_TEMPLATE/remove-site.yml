@@ -1,0 +1,28 @@
+name: Remove a source
+description: Stop scraping a configured source. Already-collected articles are kept by default.
+title: "Remove source: "
+labels: ["remove-site"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Find the exact site id in the app's 🔗 Sources panel (or `scraper/config/sites.json`) — it's
+        the short lowercase id, not the display name (e.g. `downtoearth`, not "Down To Earth").
+  - type: input
+    id: site_id
+    attributes:
+      label: Site id (see the Sources panel in the app, or sites.json)
+      placeholder: e.g. downtoearth
+    validations:
+      required: true
+  - type: dropdown
+    id: delete_articles
+    attributes:
+      label: Also delete already-scraped articles from this source?
+      description: Off by default and recommended — this only stops future scraping. Choosing "Yes" permanently deletes historical data.
+      options:
+        - "No — keep existing articles (recommended)"
+        - "Yes — delete existing articles from this source too"
+      default: 0
+    validations:
+      required: true

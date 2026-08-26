@@ -8,6 +8,8 @@
   },
   "scripts": {
     "run": "node --experimental-sqlite src/run.js",
+    "add-article": "node --experimental-sqlite src/add-single-article.js",
+    "remove-site": "node --experimental-sqlite src/remove-site.js",
     "apply-overlay": "node --experimental-sqlite src/apply-overlay.js",
     "analyze": "node --experimental-sqlite src/analyze-patterns.js",
     "preview": "node src/preview.js"

@@ -1,0 +1,77 @@
+name: Add article(s) (from issue)
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+  pages: write
+  id-token: write
+
+jobs:
+  add-article:
+    # Restricted to repo owner/collaborators — this workflow commits to the
+    # repo and uses the GROQ_API_KEY secret, so it shouldn't run for issues
+    # filed by arbitrary members of the public on a public repo.
+    if: >
+      contains(github.event.issue.labels.*.name, 'add-article') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    outputs:
+      db_changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install scraper dependencies
+        working-directory: scraper
+        run: npm ci --no-audit --no-fund
+
+      - name: Parse issue and add article(s)
+        id: add
+        working-directory: scraper
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # Indirected through an env var (not interpolated into the script
+          # text) so arbitrary issue-body content can't inject into the
+          # shell command.
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: echo "$ISSUE_BODY" | node --experimental-sqlite src/add-article-from-issue.js
+
+      - name: Commit scraped data
+        id: commit
+        run: |
+          git config user.name "blog-archiver-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if git diff --quiet -- data/blogs.db; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git add data/blogs.db
+            git commit -m "chore: add article(s) (#${{ github.event.issue.number }})"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment and close issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ steps.add.outputs.summary }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "$SUMMARY
+
+          The live site will update in a few minutes once Pages redeploys."
+          gh issue close "$ISSUE_NUMBER"
+
+  deploy:
+    needs: add-article
+    if: needs.add-article.outputs.db_changed == 'true'
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      pages: write
+      id-token: write

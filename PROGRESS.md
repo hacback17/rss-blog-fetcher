@@ -188,6 +188,47 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       `apply-overlay.js` path against the real database (then removed that
       test row before committing).
 
+## Done — v5 (add article by URL, add/remove sources)
+- [x] **Add article(s) by URL**: fetches and fully extracts one or more
+      specific article URLs through the same Readability pipeline as
+      regular scraping. New shared core (`scraper/src/add-single-article.js`,
+      exports `addSingleArticle()`), usable both locally (`npm run
+      add-article -- <url> [--tags=...]`) and via a new "Add an article"
+      issue form + workflow. If the URL's host matches an already-
+      configured site it joins that source; otherwise it gets its own
+      host-based bucket. Writes directly to the real database (not the
+      browser overlay), so no sync step needed. Respects the resolved
+      site's `respectRobotsTxt` setting.
+- [x] **Remove a source**: new "Remove a source" issue form + workflow +
+      local CLI (`npm run remove-site -- <id> [--delete-articles]`).
+      Already-scraped articles are kept by default — removal only stops
+      future scraping — with an explicit opt-in to also delete historical
+      articles from that source, following the same "safe default,
+      informed opt-in for anything destructive" pattern used for
+      robots.txt.
+- [x] Extracted the shared Issue-Form body parser (`scraper/src/
+      issue-utils.js`) out of the add-site script so add-article and
+      remove-site reuse the same parsing instead of copy-pasting it a
+      third time.
+- [x] Sources panel and Data ⇅ menu now link directly to the add-source,
+      remove-source, and add-article issue forms (pre-filled via GitHub's
+      `?template=` deep link) instead of just pointing at "the Issues tab".
+- [x] Found and fixed a real bug during this work: `process.argv[1]` isn't
+      guaranteed absolute, so the `import.meta.url === file://${process
+      .argv[1]}` "is this the main module" check silently never matched —
+      both new dual-purpose (CLI + importable) scripts ran their whole file
+      with zero output and exit 0, doing nothing. Fixed with
+      `pathToFileURL()`. Worth remembering for any future script built the
+      same way.
+- [x] Verified all of it live against the real repo state: `add-single-
+      article.js` on both a non-article page (correctly rejected) and a
+      real article (correctly inserted, tagged, extra manual tag handled
+      correctly even when it collided with an auto-tag already present —
+      no duplicate row, no crash, thanks to the `(article_id, tag_id)`
+      primary key); `remove-site.js` on a throwaway site with and without
+      `--delete-articles`, and its "not found" error path. All test data
+      removed / reverted before committing.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →

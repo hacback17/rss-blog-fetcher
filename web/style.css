@@ -86,7 +86,7 @@ body {
   flex-direction: column;
   gap: 0.5rem;
 }
-.data-menu button, .file-import-label {
+.data-menu button, .file-import-label, .menu-link-btn {
   padding: 0.5rem 0.6rem;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -95,9 +95,12 @@ body {
   cursor: pointer;
   text-align: left;
   font-size: 0.85rem;
+  display: block;
+  text-decoration: none;
 }
 .data-menu hr { border: none; border-top: 1px solid var(--border); margin: 0.2rem 0; }
 .data-menu-hint { margin: 0; color: var(--text-muted); font-size: 0.75rem; line-height: 1.4; }
+.data-menu-hint a { color: var(--accent); }
 
 .reports-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
 .reports-list li { padding: 0.4rem 0; border-bottom: 1px solid var(--border); }

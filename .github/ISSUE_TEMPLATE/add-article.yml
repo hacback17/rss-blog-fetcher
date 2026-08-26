@@ -1,0 +1,29 @@
+name: Add an article
+description: Fetch one or more specific article URLs and add their full text to the archive.
+title: "Add article(s): "
+labels: ["add-article"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Full-text extraction happens automatically when you submit this issue — same pipeline as the
+        regular scraper. If the URL's site is already configured, the article joins that source; if
+        not, it gets its own source bucket named after the domain. The issue closes itself with a
+        summary once done.
+  - type: textarea
+    id: urls
+    attributes:
+      label: Article URL(s)
+      description: One per line.
+      placeholder: |
+        https://example.com/article-one
+        https://example.com/article-two
+    validations:
+      required: true
+  - type: input
+    id: extra_tags
+    attributes:
+      label: Extra tags to add (optional, comma-separated)
+      placeholder: Personal Interest, Follow Up
+    validations:
+      required: false

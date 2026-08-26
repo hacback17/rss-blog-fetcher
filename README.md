@@ -13,12 +13,14 @@ scraper/                Node.js: sitemap/RSS discovery → full-article extracti
 data/blogs.db            the SQLite database (committed to the repo by the Action)
 reports/                 Markdown pattern-analysis reports (see "Intelligence-style pattern analysis")
 web/                     static reader + Ask-your-archive UI, runs entirely in the browser (no backend)
-.github/ISSUE_TEMPLATE/add-site.yml       the "Add a source" issue form
+.github/ISSUE_TEMPLATE/   add-site.yml, add-article.yml, remove-site.yml issue forms
 .github/workflows/
   scrape-and-deploy.yml    daily cron + manual "Run workflow" button
   add-site.yml             turns an "Add a source" issue into a live source
+  add-article.yml          turns an "Add an article" issue into fetched article(s)
+  remove-site.yml          turns a "Remove a source" issue into a config change
   analyze-patterns.yml     on-demand Gemini pattern analysis
-  deploy.yml               shared "publish to Pages" step the other three call
+  deploy.yml               shared "publish to Pages" step the other five call
 ```
 
 **No server, ever.** The GitHub Action scrapes new articles, writes them into
@@ -57,7 +59,7 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
 - **Ask your archive** — an AI Q&A chat over your own data, see "Ask your
   archive" below.
 - **Sources panel** — lists every configured site with the exact sitemap/RSS
-  URLs it's using, and an export button. See "Adding a source".
+  URLs it's using, and links to add/remove a source. See "Adding a source".
 - **Add pasted text or a file** (Data ⇅ menu → "＋ Add pasted text or a
   file") — paste text or load a `.txt`/`.md` file and it's stored as a
   regular article (source "My Notes"): searchable, taggable, and included
@@ -66,6 +68,14 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
   archive (and its AI Q&A) to know about that isn't published anywhere
   scrapable. Lives in the browser overlay like read/tag state — see
   "Where read/tags/manual edits actually live" for making it durable.
+- **Add article(s) by URL** (Data ⇅ menu → "＋ Add article(s) by URL") — for
+  one specific article you already have the link to, rather than an entire
+  site. Fetches and extracts full text through the same pipeline as regular
+  scraping (durably, into the real database — not the browser overlay, so
+  no export/sync step needed). See "Adding a source" for how this works
+  (same issue-based mechanism, since fetching arbitrary pages needs a real
+  server-side fetch, which a static page can't reliably do — most sites
+  don't allow direct browser-to-site calls from another origin).
 - **Export/import**, see "Portability" below.
 - **Pattern analysis**, see "Intelligence-style pattern analysis" below.
 
@@ -361,7 +371,40 @@ CSE India and Mongabay are configured above.
 
 The web UI's **🔗 Sources** panel always shows exactly what's configured
 right now (name + every sitemap/RSS URL in use), with a one-click export of
-the underlying `sites.json`.
+the underlying `sites.json`, and direct links to the add/remove issue forms.
+
+### Removing a source
+
+Same idea, in reverse: open a **"Remove a source"** issue (linked from the
+🔗 Sources panel, or the Issues tab) with the site's id — the short lowercase
+id from the Sources panel or `sites.json`, e.g. `downtoearth`, not the
+display name. **Already-scraped articles are kept by default** — removing a
+source only stops future scraping of it; there's an explicit opt-in checkbox
+if you actually want its historical articles deleted too. Locally:
+
+```bash
+cd scraper
+npm run remove-site -- downtoearth              # keeps existing articles
+npm run remove-site -- downtoearth --delete-articles   # also deletes them
+```
+
+### Adding a single article by URL
+
+For one article you already have the link to — not a whole site. Open an
+**"Add an article"** issue (one URL per line, multiple at once is fine) or
+locally:
+
+```bash
+cd scraper
+npm run add-article -- https://example.com/some-article
+npm run add-article -- https://example.com/a https://example.com/b --tags="Follow Up"
+```
+
+It runs the exact same extraction/auto-tagging pipeline as regular scraping.
+If the URL's site is already configured, the article joins that source; if
+not, it gets its own bucket named after the domain (e.g. `en.wikipedia.org`).
+This writes straight to the real, committed database — unlike "Add pasted
+text", there's no browser-overlay/sync step involved.
 
 ## Politeness / not burdening servers
 

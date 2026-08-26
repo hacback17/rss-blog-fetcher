@@ -1,0 +1,69 @@
+name: Remove a source (from issue)
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+  pages: write
+  id-token: write
+
+jobs:
+  remove-site:
+    # Restricted to repo owner/collaborators — this can permanently delete
+    # data (if "delete articles" is chosen) and always commits to the repo.
+    if: >
+      contains(github.event.issue.labels.*.name, 'remove-site') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install scraper dependencies
+        working-directory: scraper
+        run: npm ci --no-audit --no-fund
+
+      - name: Parse issue and remove site
+        id: remove
+        working-directory: scraper
+        env:
+          # Indirected through an env var so arbitrary issue-body content
+          # can't inject into the shell command.
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: echo "$ISSUE_BODY" | node --experimental-sqlite src/remove-site-from-issue.js
+
+      - name: Commit changes
+        env:
+          SITE_NAME: ${{ steps.remove.outputs.site_name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          git config user.name "blog-archiver-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add scraper/config/sites.json data/blogs.db
+          git commit -m "chore: remove source $SITE_NAME (#$ISSUE_NUMBER)"
+          git push
+
+      - name: Comment and close issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SITE_NAME: ${{ steps.remove.outputs.site_name }}
+          DELETED_COUNT: ${{ steps.remove.outputs.deleted_count }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Removed **$SITE_NAME** from \`scraper/config/sites.json\`. $([ "$DELETED_COUNT" != "0" ] && echo "Deleted $DELETED_COUNT already-scraped article(s) from this source." || echo "Already-scraped articles from this source were kept.")
+
+          It will no longer be scraped going forward. The live site will update in a few minutes once Pages redeploys."
+          gh issue close "$ISSUE_NUMBER"
+
+  deploy:
+    needs: remove-site
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      pages: write
+      id-token: write
