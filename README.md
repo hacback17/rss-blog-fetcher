@@ -222,23 +222,35 @@ Click a tag to zoom into just its articles. Two kinds of node are drawn, and
 they stay visually distinct at any zoom level:
 
 - **Hub nodes** (purple) are topics. At the top level these are all your
-  tags, sized by how many other tags they co-occur with, edged to each
-  other by co-occurrence. Click one to zoom into just that tag.
+  tags, sized by how many other tags they co-occur with, edged to only each
+  tag's 3 strongest co-occurrences (not every pair) so it doesn't collapse
+  into a hairball. Click one to zoom into just that tag. Hovering a hub also
+  declutters the view: only its own name and its direct neighbors' names are
+  shown, every other label disappears until you move on.
 - **Leaf nodes** (green) are individual articles. They're always the same
   small size and color, and always show their title, not just on hover.
 
-Deliberately **flat, one level deep — like Obsidian's local graph view, not
-a nested tree**: zooming into a tag shows a single hub (that tag) with every
-one of its articles spoking directly off it, and that's it — no clusters
-inside clusters. The hub's own label is already the answer to "why are these
-grouped": they all carry that tag. Click a leaf to open that article in the
-reader; the hub itself is just the center of the view, not another drill-in
-target, so there's nowhere further to descend into by accident.
+Zooming into a tag shows that tag as a hub with its articles as leaves — but
+for a big tag (hundreds of articles), leaves spoking directly off one point
+all look identical and carry no information. So when several articles in the
+set also share some *other* tag, that tag becomes its own small sub-hub
+(e.g. inside "Biodiversity," articles also tagged "Wildlife Conservation"
+cluster around their own sub-hub, separate from ones also tagged "Water
+Resources") — the sub-hub's label is the visible answer to "why are these
+particular ones grouped." Sub-hubs are capped at each tag's 15 largest
+groupings (3+ shared articles) so it stays legible even on huge tags, and
+any article with no qualifying sub-group still connects straight to the main
+hub. Crucially, **sub-hubs aren't a further drill-in target** — clicking one
+does nothing, only the top-level tag graph lets you zoom deeper — so this
+stays "flat" in the sense that matters: you never get confusing
+cluster-inside-cluster navigation, just one screen with real structure on
+it. Click a leaf to open that article in the reader.
 
 Drag to pan, scroll/pinch to zoom, drag a node to reposition it — it's a
 small hand-rolled canvas force simulation (no charting library) with enough
-node repulsion that edges spread out instead of visually overlapping, themed
-to match light/dark mode.
+node repulsion, size-aware collision resolution, and edge pruning that
+nodes keep real breathing room instead of visually overlapping or touching,
+themed to match light/dark mode.
 
 ## Ask your archive
 

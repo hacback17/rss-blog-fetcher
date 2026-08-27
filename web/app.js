@@ -850,20 +850,77 @@ function showArticleGraphForTag(tagId, tagName) {
     { $tagId: tagId }
   );
 
-  // Deliberately flat, one level deep — like Obsidian's local graph view: a
-  // single hub node (this tag) with every one of its articles as a leaf
-  // spoking directly off it, nothing more. An earlier version tried to also
-  // sub-cluster articles by *other* shared tags, but that produced clusters
-  // nested inside clusters when you clicked further in, which read as
-  // confusing rather than helpful — the hub's own label ("why are these
-  // grouped": they all carry this tag) is already the full explanation.
+  // One level deep, never recursively drillable — handleGraphNodeClick only
+  // lets a hub drill further when graphState.mode === "tags" (the top
+  // level), so nothing below is a further click target regardless of what
+  // gets drawn here. That's what keeps this "flat" in the sense that
+  // matters (no cluster-inside-cluster *navigation*). But a bare tag with
+  // every one of its (possibly 200+) articles spoking off one point turned
+  // out to carry no information beyond "these all share this tag" — every
+  // spoke looks identical, so at any real size it read as noise, not a
+  // graph. Sub-grouping by *other* tags shared by several of these articles
+  // restores the actual information (which articles relate to each other,
+  // and why) without reintroducing the confusing part, since these
+  // sub-group hubs are inert — visual grouping only, not another drill-in.
+  let secondaryRows = [];
+  if (rawArticles.length > 1) {
+    secondaryRows = queryAll(
+      state.db,
+      `SELECT at.article_id AS articleId, t.id AS tagId, t.name AS tagName
+       FROM article_tags at JOIN tags t ON t.id = at.tag_id
+       WHERE at.article_id IN (${rawArticles.map((a) => a.id).join(",")}) AND at.tag_id != $tagId`,
+      { $tagId: tagId }
+    );
+  }
+  const bySecondaryTag = new Map(); // tagId -> { tagName, articleIds: Set }
+  for (const row of secondaryRows) {
+    if (!bySecondaryTag.has(row.tagId)) bySecondaryTag.set(row.tagId, { tagName: row.tagName, articleIds: new Set() });
+    bySecondaryTag.get(row.tagId).articleIds.add(row.articleId);
+  }
+  const SECONDARY_HUB_MIN_ARTICLES = 3;
+  const MAX_SECONDARY_HUBS = 15;
+  const secondaryHubs = [...bySecondaryTag.entries()]
+    .filter(([, h]) => h.articleIds.size >= SECONDARY_HUB_MIN_ARTICLES)
+    .sort((a, b) => b[1].articleIds.size - a[1].articleIds.size)
+    .slice(0, MAX_SECONDARY_HUBS);
+  const articleToHubs = new Map(); // articleId -> [secondaryTagId, ...]
+  for (const [secTagId, h] of secondaryHubs) {
+    for (const articleId of h.articleIds) {
+      if (!articleToHubs.has(articleId)) articleToHubs.set(articleId, []);
+      articleToHubs.get(articleId).push(secTagId);
+    }
+  }
+
   // See showTagGraph() for why node ids need a namespace prefix.
   const hubNode = { id: `t${tagId}`, refId: tagId, label: tagName, count: rawArticles.length, kind: "hub" };
+  const secondaryHubNodes = secondaryHubs.map(([secTagId, h]) => ({
+    id: `s${secTagId}`,
+    refId: secTagId,
+    label: h.tagName,
+    count: h.articleIds.size,
+    kind: "hub",
+  }));
   const articleNodes = rawArticles.map((a) => ({ id: `a${a.id}`, refId: a.id, label: a.label, kind: "leaf" }));
-  const edges = rawArticles.map((a) => ({ source: `t${tagId}`, target: `a${a.id}`, weight: 1 }));
 
-  const nodes = [hubNode, ...articleNodes];
-  els.graphSubtitle.textContent = `${articleNodes.length} article(s) tagged "${tagName}" — click one to open it`;
+  const edges = [];
+  // Backbone: every sub-group hub anchors back to the tag it's a part of.
+  for (const [secTagId] of secondaryHubs) edges.push({ source: `t${tagId}`, target: `s${secTagId}`, weight: 3 });
+  // Each article links to whichever sub-group(s) it belongs to; articles
+  // with no qualifying sub-group link straight to the tag itself, same as
+  // the plain flat view.
+  for (const a of rawArticles) {
+    const hubs = articleToHubs.get(a.id);
+    if (hubs && hubs.length) {
+      for (const secTagId of hubs) edges.push({ source: `s${secTagId}`, target: `a${a.id}`, weight: 1 });
+    } else {
+      edges.push({ source: `t${tagId}`, target: `a${a.id}`, weight: 1 });
+    }
+  }
+
+  const nodes = [hubNode, ...secondaryHubNodes, ...articleNodes];
+  els.graphSubtitle.textContent = secondaryHubs.length
+    ? `${articleNodes.length} article(s) tagged "${tagName}", grouped by ${secondaryHubs.length} related topic(s) — click an article to open it`
+    : `${articleNodes.length} article(s) tagged "${tagName}" — click one to open it`;
   els.graphEmpty.classList.toggle("hidden", articleNodes.length > 0);
   forceGraph.setData(nodes, edges);
 }

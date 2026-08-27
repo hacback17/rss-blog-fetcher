@@ -415,6 +415,28 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       neighborhood in real time, the zoomed-out 43-topic view shows real
       breathing room with outliers pushed to the fringes instead of one
       dense blob, and it resettles cleanly (no jitter) after release.
+- [x] **Graph information-density fix (same day, user feedback):** the
+      strictly-flat single-hub-plus-200-leaves view (previous entry) turned
+      out to have the opposite problem from the nested version — a big tag
+      like "Biodiversity" (200 articles) rendered as one giant starburst
+      where every spoke looked identical, carrying no information beyond
+      "these all share this tag." Restored sub-grouping by *other* tags
+      shared by several articles (e.g. "Wildlife Conservation," "Water
+      Resources" sub-hubs inside "Biodiversity"), but kept it genuinely flat
+      *in the sense that matters*: sub-hubs are inert, not another drill-in
+      target — `handleGraphNodeClick` already only lets a hub drill further
+      when `graphState.mode === "tags"` (the top level), so bringing back
+      the visual sub-clustering didn't reintroduce the earlier "cluster
+      inside cluster" navigation confusion, it just restores the
+      information. Capped at each sub-group's top 15 largest (min 3 shared
+      articles) so it stays legible even on a 200-article tag; articles with
+      no qualifying sub-group still connect straight to the main hub as
+      before. Verified live: "Biodiversity" now shows "200 article(s)...
+      grouped by 15 related topic(s)" with real named sub-clusters
+      (Wildlife Conservation, Water Resources, Agriculture, etc.) instead of
+      one undifferentiated starburst; confirmed clicking a sub-hub is still
+      a no-op (stays on the same view) and clicking a leaf article still
+      opens it correctly.
 - [x] **Recent search history.** Last 8 searches persist in `localStorage`
       (`blogArchive.recentSearches.v1`) and render as clickable chips under
       the search box — clicking one refills the search box, re-runs the
