@@ -76,7 +76,12 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
 - **Today's brief** — auto-generates once a day from your unread backlog, no
   scope-picking needed. See "Today's brief" below.
 - **Saved story ideas** — ⭐ Save any Tension finder/Today's brief card to
-  keep it past that panel closing. See "Saved story ideas" below.
+  keep it past that panel closing, then ✓ Mark used once you've actually
+  written from it (a permanent history, distinct from discarding). See
+  "Saved story ideas" below.
+- **Field notes** — your own interviews/observations (not scraped
+  journalism), searchable/taggable/graphed right alongside the archive. See
+  "Field notes" below.
 - **Local AI app access (MCP server)** — lets a locally-installed Claude
   Desktop app search/read the archive directly, no copy/paste. See "Local AI
   app access" below.
@@ -395,15 +400,53 @@ saved").
 To un-save something, you don't need to go find it in the ⭐ Saved panel —
 click the same button again right where you saved it (it reads "★ Unsave"
 once something's saved, and turns red on hover as a heads-up that clicking
-removes it). The ⭐ Saved panel itself also has a 🗑 Remove button on each
-card, for pruning the backlog once you've actually used an idea or decided
-against it.
+removes it).
+
+The ⭐ Saved panel itself has two tabs:
+
+- **Active** — your backlog. Each card has ✓ Mark used and 🗑 Remove.
+  These aren't the same action: **Mark used** means you actually wrote from
+  it — it moves to the Used tab as a permanent record, not a deletion.
+  **Remove** means you decided against it and just want it gone.
+- **Used** — a lightweight history of ideas you've actually published from.
+  This is what lets a future brief avoid nudging you toward repeating a
+  story you've already told, and over time shows what you've actually
+  covered. Each card has 🗑 Delete to prune the history itself, if you want.
 
 Like read/tag state, this lives in `localStorage` — per-browser, not
 synced anywhere. If you want it to survive a browser switch or show up on
 another device, say so; it isn't wired into the existing overlay
 export/import flow yet (see "Where read/tags/manual edits actually live"),
 but it's a small addition if you want it.
+
+## Field notes
+
+Tension finder, Today's brief, and search all work from what's been
+scraped — but a real chunk of what actually becomes a Kumar.thinks post,
+per the examples that shaped this tool, isn't journalism at all: it's a
+conversation, something someone said, something you noticed in person.
+That had nowhere to live in this archive until now.
+
+**Data ⇅ menu → "🎙 Add a field note"** opens a small form: Person
+(optional), Place (optional), Date (defaults to today), and the note
+itself — what was said, what you observed, direct quotes. It's stored
+using the exact same mechanism as "Add pasted text or a file" (see
+"Features" above), so it's searchable, taggable, shows up in the graph, and gets
+pulled into Ask/Tension finder/Today's brief retrieval automatically — no
+special-casing anywhere downstream. The only difference is its source:
+field notes get their own `site_id` ("Field notes"), filterable separately
+from generic pasted notes in the site dropdown, and the person/place/date
+you entered are prepended as a small front-matter block so "who, where,
+when" is always visible and searchable alongside the note text itself.
+
+This is what makes it possible to ask "what do I actually know about
+Lahaul's water crisis" and get **both** what Down To Earth reported *and*
+what someone told you in Khangsar, together — instead of your own fieldwork
+living only in your head or your phone, disconnected from everything else
+you've archived.
+
+Like pasted text, this lives in the browser overlay (`localStorage`) until
+exported/synced — see "Where read/tags/manual edits actually live".
 
 ## Local AI app access (MCP server)
 

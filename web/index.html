@@ -183,6 +183,10 @@
         <strong>Saved story ideas</strong>
         <button id="saved-close-btn" title="Close">×</button>
       </div>
+      <div class="saved-tabs">
+        <button id="saved-tab-active" class="saved-tab active" data-view="active">Active</button>
+        <button id="saved-tab-used" class="saved-tab" data-view="used">Used</button>
+      </div>
       <div id="saved-results" class="tension-results">
         <p class="ask-empty">
           Save an observation from ⚡ Tensions or 🔆 Today with the ☆ button on its card, and it
@@ -214,6 +218,7 @@
     <div id="data-menu" class="data-menu hidden">
       <strong>Export / import</strong>
       <button id="add-text-btn">＋ Add pasted text or a file</button>
+      <button id="add-fieldnote-btn">🎙 Add a field note</button>
       <a class="menu-link-btn" href="https://github.com/hacback17/rss-blog-fetcher/issues/new?template=add-article.yml" target="_blank" rel="noopener noreferrer">＋ Add article(s) by URL ↗</a>
       <hr />
       <button id="export-db-btn">⬇ Download full database (.db)</button>
@@ -252,6 +257,43 @@
             README "Where read/tags/manual edits actually live").
           </p>
           <button id="add-text-save-btn" class="primary-btn">Add to archive</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="add-fieldnote-backdrop" class="add-text-backdrop hidden">
+      <div id="add-fieldnote-modal" class="add-text-modal">
+        <div class="ask-header">
+          <strong>Add a field note</strong>
+          <button id="add-fieldnote-close-btn" title="Close">×</button>
+        </div>
+        <div class="add-text-body">
+          <label>Title (optional — inferred from person/place if left blank)
+            <input type="text" id="fieldnote-title" placeholder="e.g. On local ecological knowledge" />
+          </label>
+          <div class="fieldnote-row">
+            <label>Person (optional)
+              <input type="text" id="fieldnote-person" placeholder="e.g. Rajender Thakur" />
+            </label>
+            <label>Place (optional)
+              <input type="text" id="fieldnote-place" placeholder="e.g. Khangsar, Lahaul" />
+            </label>
+          </div>
+          <label>Date
+            <input type="date" id="fieldnote-date" />
+          </label>
+          <label>Note
+            <textarea id="fieldnote-body" rows="10" placeholder="What they said, what you observed, direct quotes — your own fieldwork, not a summary."></textarea>
+          </label>
+          <p class="data-menu-hint">
+            Stored as a <strong>Field note</strong> — a separate source from scraped articles, so you
+            can filter to just your own fieldwork, but otherwise searchable, taggable, and included in
+            Ask/Tensions/Today exactly like everything else. This is what lets you ask "what do I know
+            about X" and get your own conversations *and* the journalism you've archived, together.
+            Lives in this browser only until exported/synced (see README "Where read/tags/manual edits
+            actually live").
+          </p>
+          <button id="fieldnote-save-btn" class="primary-btn">Add field note</button>
         </div>
       </div>
     </div>

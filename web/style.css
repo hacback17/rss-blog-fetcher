@@ -283,7 +283,7 @@ body {
   padding-top: 0.5rem;
   border-top: 1px solid var(--border);
 }
-.tension-save-btn, .tension-remove-btn {
+.tension-save-btn, .tension-remove-btn, .tension-mark-used-btn {
   font-size: 0.72rem;
   padding: 0.25rem 0.6rem;
   border-radius: 4px;
@@ -296,7 +296,21 @@ body {
 .tension-save-btn.saved { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
 .tension-save-btn.saved:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
 .tension-remove-btn:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+.tension-mark-used-btn:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
 .tension-saved-date { font-size: 0.68rem; color: var(--text-muted); }
+.tension-save-actions { display: flex; gap: 0.4rem; }
+
+.saved-tabs { display: flex; gap: 0.4rem; padding: 0.6rem 0.9rem 0; }
+.saved-tab {
+  font-size: 0.78rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.saved-tab.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); font-weight: 600; }
 
 /* --- Today's brief --- */
 #today-btn { position: relative; }
@@ -681,7 +695,7 @@ body.pane-resizing iframe { pointer-events: none; }
   font-size: 0.85rem;
 }
 .add-text-body label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--text-muted); }
-.add-text-body input[type="text"], .add-text-body textarea {
+.add-text-body input[type="text"], .add-text-body input[type="date"], .add-text-body textarea {
   padding: 0.5rem 0.6rem;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -691,6 +705,8 @@ body.pane-resizing iframe { pointer-events: none; }
   font-family: inherit;
   resize: vertical;
 }
+.fieldnote-row { display: flex; gap: 0.7rem; }
+.fieldnote-row label { flex: 1; min-width: 0; }
 .primary-btn {
   padding: 0.55rem 0.9rem;
   border-radius: 6px;

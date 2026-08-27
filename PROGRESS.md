@@ -676,6 +676,57 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       addition if the user wants saved ideas portable across browsers/
       devices, rather than assuming and building it unasked.
 
+## Done — v15 (used-idea history + field notes)
+- [x] **✓ Mark used / used-idea history** — the two ideas suggested and
+      approved together. The ⭐ Saved panel now has Active/Used tabs.
+      `markIdeaUsed(id)` moves an item from the active `savedIdeas` list
+      into a new permanent `usedIdeas` list (`localStorage`) with a
+      `usedAt` timestamp, distinct from `removeSavedIdea` (which discards).
+      Used-tab cards are read-only history with just a 🗑 Delete to prune
+      the log itself. Directly serves what the user's own Kumar.thinks
+      prompt asks for: never repeating a story already told, and — longer
+      term — being able to see actual posting variety instead of guessing.
+      Verified live: seeded a real saved idea, called the real
+      `markIdeaUsed` handler, confirmed via direct storage inspection it
+      moved from `savedIdeas` (1→0) to `usedIdeas` (0→1), confirmed the
+      Active tab shows the empty state and the Used tab shows the item with
+      "Used [date]" and a working Delete that removes it from storage.
+- [x] **Field notes** — the larger, previously-floated-twice idea, finally
+      built. New **Data ⇅ → "🎙 Add a field note"** modal: Person (optional),
+      Place (optional), Date (defaults to today), Note. Reuses the exact
+      same custom-article mechanism as "Add pasted text" — generalized
+      `insertCustomArticleToDb`/`addCustomArticle` to accept a configurable
+      `site_id`/`site_name` (defaulting to the pre-existing 'custom'/'My
+      Notes' for full backward compatibility with existing overlays) so
+      field notes get their own `site_id: 'fieldnotes'`, filterable
+      separately from generic pasted notes. Person/Place/Date are prepended
+      as a small front-matter block ahead of the note text, and the title
+      is auto-inferred from Person/Place when left blank. Because this
+      reuses the existing custom-article path exactly, field notes are
+      automatically searchable, taggable, graphed, and pulled into Ask/
+      Tension finder/Today's brief retrieval — no special-casing needed
+      anywhere downstream. This is the piece that lets the archive actually
+      answer "what do I know about X" from both journalism and personal
+      fieldwork together, which was the whole point of raising it.
+- [x] Verified live end-to-end (not just a code read): filled and submitted
+      a real field note (Person: Rajender Thakur, Place: Khangsar, Lahaul,
+      matching the example from the user's own Kumar.thinks writing
+      principles), confirmed via direct storage inspection that the
+      front-matter, auto-inferred title ("Rajender Thakur — Khangsar,
+      Lahaul"), and site_id/site_name landed correctly; confirmed live in
+      the UI that it appears at the top of the article list with "Field
+      notes" as its source, appears as its own filterable option in the
+      site dropdown, and — the real test — that searching "flower" (a word
+      only in the note body, not the title) actually surfaces it ranked
+      alongside real scraped articles containing the same word.
+- [x] Along the way, hit and worked around a recurring test-tool quirk
+      (not a bug in the app): in this narrow/scaled preview pane, pixel-
+      coordinate clicks on topbar buttons and modal fields sometimes
+      silently miss their target, so several steps needed `read_page`
+      ref-based `form_input`/clicks or direct `.click()` calls instead of
+      raw coordinates to get a reliable signal on whether a feature
+      actually worked.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →

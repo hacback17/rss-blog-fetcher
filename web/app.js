@@ -45,6 +45,9 @@ const els = {};
   "tension-find-btn", "tension-results",
   "today-btn", "today-badge", "today-panel", "today-close-btn", "today-refresh-btn", "today-results",
   "saved-btn", "saved-panel", "saved-close-btn", "saved-results",
+  "saved-tab-active", "saved-tab-used",
+  "add-fieldnote-btn", "add-fieldnote-backdrop", "add-fieldnote-close-btn",
+  "fieldnote-title", "fieldnote-person", "fieldnote-place", "fieldnote-date", "fieldnote-body", "fieldnote-save-btn",
   "add-text-btn", "add-text-backdrop", "add-text-modal", "add-text-close-btn", "add-text-title",
   "add-text-file-input", "add-text-body-input", "add-text-save-btn",
   "graph-btn", "graph-backdrop", "graph-modal", "graph-title", "graph-subtitle", "graph-back-btn",
@@ -106,16 +109,22 @@ function applyOverlayToDb(db, overlay) {
   }
 }
 
-// Pasted/imported text is stored as a regular article (site_id='custom') so
-// it's searchable, taggable, and shows up in "Ask your archive" retrieval
-// exactly like scraped content — no special-casing needed anywhere else.
+// Pasted/imported text (and field notes — same mechanism, different
+// site_id/site_name so they're filterable separately) is stored as a
+// regular article so it's searchable, taggable, and shows up in "Ask your
+// archive"/Tension/Today retrieval exactly like scraped content — no
+// special-casing needed anywhere else. Older overlay entries predating
+// field notes won't have siteId/siteName set, hence the defaults below —
+// keeps them rendering exactly as before.
 function insertCustomArticleToDb(db, url, entry) {
   const wordCount = entry.contentText.split(/\s+/).filter(Boolean).length;
   db.exec({
     sql: `INSERT OR IGNORE INTO articles
       (site_id, site_name, url, title, published_at, fetched_at, updated_at, content_html, content_text, excerpt, word_count)
-      VALUES ('custom', 'My Notes', $url, $title, $addedAt, $addedAt, $addedAt, $html, $text, $excerpt, $wordCount)`,
+      VALUES ($siteId, $siteName, $url, $title, $addedAt, $addedAt, $addedAt, $html, $text, $excerpt, $wordCount)`,
     bind: {
+      $siteId: entry.siteId || "custom",
+      $siteName: entry.siteName || "My Notes",
       $url: url,
       $title: entry.title,
       $addedAt: entry.addedAt,
@@ -350,6 +359,7 @@ function wireEvents() {
   wireTodayPanel();
   wireSavedPanel();
   wireAddTextModal();
+  wireFieldnoteModal();
   wireGraph();
   wirePaneResizer();
 }
@@ -398,10 +408,10 @@ function wireAddTextModal() {
   });
 }
 
-function addCustomArticle(title, text) {
+function addCustomArticle(title, text, siteId, siteName) {
   const url = `custom://${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const addedAt = new Date().toISOString();
-  const entry = { title, contentText: text, addedAt };
+  const entry = { title, contentText: text, addedAt, siteId, siteName };
 
   const overlay = loadOverlay();
   overlay.customArticles[url] = entry;
@@ -411,6 +421,58 @@ function addCustomArticle(title, text) {
   populateSiteFilter();
   populateTagList();
   runQuery();
+}
+
+// ---------- field notes ----------
+// Half of what a curiosity-driven storyteller actually has to work with —
+// a conversation, an observation made in person — has no home in a
+// scraped-journalism archive. Field notes reuse the exact same custom-
+// article mechanism as "Add pasted text" (searchable/taggable/included in
+// Ask/Tension/Today retrieval automatically, no special-casing needed
+// anywhere downstream), just with their own site_id/site_name so they're
+// filterable as their own source and read distinctly from generic notes —
+// and a structured Person/Place/Date front-matter block prepended to the
+// text, so "who said this and where" is always visible and searchable
+// alongside the note itself, not lost in freeform text.
+function wireFieldnoteModal() {
+  const open = () => {
+    els.dataMenu.classList.add("hidden");
+    els.addFieldnoteBackdrop.classList.remove("hidden");
+    if (!els.fieldnoteDate.value) els.fieldnoteDate.value = localDateString(new Date());
+    els.fieldnoteTitle.focus();
+  };
+  const close = () => {
+    els.addFieldnoteBackdrop.classList.add("hidden");
+    els.fieldnoteTitle.value = "";
+    els.fieldnotePerson.value = "";
+    els.fieldnotePlace.value = "";
+    els.fieldnoteDate.value = "";
+    els.fieldnoteBody.value = "";
+  };
+
+  els.addFieldnoteBtn.addEventListener("click", open);
+  els.addFieldnoteCloseBtn.addEventListener("click", close);
+  els.addFieldnoteBackdrop.addEventListener("click", (e) => {
+    if (e.target === els.addFieldnoteBackdrop) close();
+  });
+
+  els.fieldnoteSaveBtn.addEventListener("click", () => {
+    const person = els.fieldnotePerson.value.trim();
+    const place = els.fieldnotePlace.value.trim();
+    const date = els.fieldnoteDate.value;
+    const note = els.fieldnoteBody.value.trim();
+    if (!note) {
+      alert("Add the note itself first — what was said or observed.");
+      return;
+    }
+    const title = els.fieldnoteTitle.value.trim() || [person, place].filter(Boolean).join(" — ") || "Field note";
+    const frontMatter = [person && `Person: ${person}`, place && `Place: ${place}`, date && `Date: ${date}`]
+      .filter(Boolean)
+      .join(" · ");
+    const text = frontMatter ? `${frontMatter}\n\n${note}` : note;
+    addCustomArticle(title, text, "fieldnotes", "Field notes");
+    close();
+  });
 }
 
 // ---------- query helpers ----------
@@ -1878,12 +1940,55 @@ function removeSavedIdea(id) {
   persistSavedIdeas(loadSavedIdeas().filter((it) => it.id !== id));
 }
 
+// "Used" is a separate, permanent history — not just a deletion — so
+// marking an idea used (i.e. actually written from) is distinguishable
+// from removing one you decided against. This is what lets the archive
+// eventually answer "have I already told this story" and, over time, show
+// what mix of formats/angles have actually been published, instead of
+// Remove silently erasing that distinction.
+const USED_IDEAS_KEY = "blogArchive.usedIdeas.v1";
+
+function loadUsedIdeas() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(USED_IDEAS_KEY));
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistUsedIdeas(list) {
+  localStorage.setItem(USED_IDEAS_KEY, JSON.stringify(list));
+}
+
+function markIdeaUsed(id) {
+  const list = loadSavedIdeas();
+  const idx = list.findIndex((it) => it.id === id);
+  if (idx === -1) return;
+  const [item] = list.splice(idx, 1);
+  persistSavedIdeas(list);
+  const used = loadUsedIdeas();
+  used.unshift({ ...item, usedAt: new Date().toISOString() });
+  persistUsedIdeas(used);
+}
+
+function deleteUsedIdea(id) {
+  persistUsedIdeas(loadUsedIdeas().filter((it) => it.id !== id));
+}
+
+let savedPanelView = "active"; // "active" | "used"
+
 function renderSavedIdeas() {
-  const items = loadSavedIdeas();
+  els.savedTabActive.classList.toggle("active", savedPanelView === "active");
+  els.savedTabUsed.classList.toggle("active", savedPanelView === "used");
+
+  const items = savedPanelView === "active" ? loadSavedIdeas() : loadUsedIdeas();
   els.savedResults.innerHTML = "";
   if (!items.length) {
     els.savedResults.innerHTML =
-      '<p class="ask-empty">Save an observation from ⚡ Tensions or 🔆 Today with the ☆ button on its card, and it stays here — a backlog to draw from whenever you actually have time to write, instead of losing a good one on a busy day.</p>';
+      savedPanelView === "active"
+        ? '<p class="ask-empty">Save an observation from ⚡ Tensions or 🔆 Today with the ☆ button on its card, and it stays here — a backlog to draw from whenever you actually have time to write, instead of losing a good one on a busy day.</p>'
+        : '<p class="ask-empty">Once you actually write from a saved idea, mark it used here instead of removing it — a lightweight history of what you\'ve already told, so a future brief never nudges you toward repeating yourself.</p>';
     return;
   }
   for (const item of items) {
@@ -1893,17 +1998,41 @@ function renderSavedIdeas() {
 
     const footer = document.createElement("div");
     footer.className = "tension-save-row";
-    footer.innerHTML = `<span class="tension-saved-date">Saved ${formatDate(item.savedAt)}</span>`;
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "tension-remove-btn";
-    removeBtn.textContent = "🗑 Remove";
-    removeBtn.addEventListener("click", () => {
-      removeSavedIdea(item.id);
-      renderSavedIdeas();
-    });
-    footer.appendChild(removeBtn);
-    div.appendChild(footer);
 
+    if (savedPanelView === "active") {
+      footer.innerHTML = `<span class="tension-saved-date">Saved ${formatDate(item.savedAt)}</span>`;
+      const actions = document.createElement("div");
+      actions.className = "tension-save-actions";
+      const usedBtn = document.createElement("button");
+      usedBtn.className = "tension-mark-used-btn";
+      usedBtn.textContent = "✓ Mark used";
+      usedBtn.addEventListener("click", () => {
+        markIdeaUsed(item.id);
+        renderSavedIdeas();
+      });
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "tension-remove-btn";
+      removeBtn.textContent = "🗑 Remove";
+      removeBtn.addEventListener("click", () => {
+        removeSavedIdea(item.id);
+        renderSavedIdeas();
+      });
+      actions.appendChild(usedBtn);
+      actions.appendChild(removeBtn);
+      footer.appendChild(actions);
+    } else {
+      footer.innerHTML = `<span class="tension-saved-date">Used ${formatDate(item.usedAt)}</span>`;
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "tension-remove-btn";
+      deleteBtn.textContent = "🗑 Delete";
+      deleteBtn.addEventListener("click", () => {
+        deleteUsedIdea(item.id);
+        renderSavedIdeas();
+      });
+      footer.appendChild(deleteBtn);
+    }
+
+    div.appendChild(footer);
     els.savedResults.appendChild(div);
   }
 }
@@ -1914,6 +2043,14 @@ function wireSavedPanel() {
     if (!els.savedPanel.classList.contains("hidden")) renderSavedIdeas();
   });
   els.savedCloseBtn.addEventListener("click", () => els.savedPanel.classList.add("hidden"));
+  els.savedTabActive.addEventListener("click", () => {
+    savedPanelView = "active";
+    renderSavedIdeas();
+  });
+  els.savedTabUsed.addEventListener("click", () => {
+    savedPanelView = "used";
+    renderSavedIdeas();
+  });
 }
 
 // ---------- pane resizer ----------
