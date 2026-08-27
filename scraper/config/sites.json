@@ -83,6 +83,15 @@
       "includePathPrefixes": [
         "/environment/"
       ]
+    },
+    {
+      "id": "scroll",
+      "name": "Scroll.in",
+      "baseUrl": "https://scroll.in",
+      "sitemapUrls": [
+        "https://scroll.in/sitemap/news-sitemap.xml"
+      ],
+      "note": "Deliberately unfiltered (all topics, not just environment) — this is a Google News-format sitemap (news:publication_date, no <lastmod>), and being a rolling recent-news feed rather than a full historical archive, it's expected to only ever surface roughly the last day or two of articles per run."
     }
   ],
   "excludedSites": [
