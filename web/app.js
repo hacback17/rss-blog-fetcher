@@ -33,6 +33,7 @@ const els = {};
   "result-count", "db-status", "active-tag-bar",
   "tag-list", "reader-empty", "reader-article", "reader-title", "reader-author", "reader-date",
   "reader-words", "reader-body", "reader-source-link", "reader-pane", "reader-read-toggle",
+  "list-pane", "pane-resizer", "tag-pane",
   "reader-tags", "theme-toggle", "data-menu-btn", "data-menu", "export-db-btn", "export-jsonl-btn",
   "export-overlay-btn", "import-overlay-input", "reports-btn", "reports-menu", "reports-list",
   "log-btn", "log-menu", "log-list", "recent-searches", "recent-searches-list",
@@ -348,6 +349,7 @@ function wireEvents() {
   wireTodayPanel();
   wireAddTextModal();
   wireGraph();
+  wirePaneResizer();
 }
 
 // ---------- add pasted text / file ----------
@@ -1741,6 +1743,55 @@ function wireTodayPanel() {
   });
   els.todayCloseBtn.addEventListener("click", () => els.todayPanel.classList.add("hidden"));
   els.todayRefreshBtn.addEventListener("click", () => generateDailyBrief(true));
+}
+
+// ---------- pane resizer ----------
+// Drag the divider between the article list and the reader to trade list
+// width for reading room. Width is stored in px (not the layout's default
+// %) once the user drags, and persisted so it survives a reload.
+
+const LIST_PANE_WIDTH_KEY = "blogArchive.listPaneWidth.v1";
+const LIST_PANE_MIN_WIDTH = 260;
+const READER_PANE_MIN_WIDTH = 320;
+
+function wirePaneResizer() {
+  const saved = Number(localStorage.getItem(LIST_PANE_WIDTH_KEY));
+  if (saved > 0) els.listPane.style.width = `${saved}px`;
+
+  let startX = 0;
+  let startWidth = 0;
+
+  const onMove = (e) => {
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const delta = clientX - startX;
+    const maxWidth =
+      els.listPane.parentElement.clientWidth - READER_PANE_MIN_WIDTH - els.tagPane.offsetWidth - els.paneResizer.offsetWidth;
+    const next = Math.min(maxWidth, Math.max(LIST_PANE_MIN_WIDTH, startWidth + delta));
+    els.listPane.style.width = `${next}px`;
+  };
+  const onUp = () => {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    document.removeEventListener("touchmove", onMove);
+    document.removeEventListener("touchend", onUp);
+    document.body.classList.remove("pane-resizing");
+    els.paneResizer.classList.remove("dragging");
+    localStorage.setItem(LIST_PANE_WIDTH_KEY, String(Math.round(els.listPane.getBoundingClientRect().width)));
+  };
+  const onDown = (e) => {
+    e.preventDefault();
+    startX = e.touches ? e.touches[0].clientX : e.clientX;
+    startWidth = els.listPane.getBoundingClientRect().width;
+    document.body.classList.add("pane-resizing");
+    els.paneResizer.classList.add("dragging");
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onUp);
+  };
+
+  els.paneResizer.addEventListener("mousedown", onDown);
+  els.paneResizer.addEventListener("touchstart", onDown, { passive: false });
 }
 
 // ---------- misc ----------

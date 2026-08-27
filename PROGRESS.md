@@ -549,6 +549,29 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       render correctly for the single-claim case (Tension finder had only
       exercised the two-claim case before this).
 
+## Done — v11 (resizable list/reader panels)
+- [x] **Draggable pane resizer** — new `#pane-resizer` divider between the
+      article list and the reader pane; drag to trade list width for
+      reading room, width persisted per-browser (`localStorage`), desktop
+      only (hidden under the existing mobile breakpoint, where panels
+      stack vertically instead). Verified live: since the browser
+      automation tool's synthetic drag doesn't reliably fire a real
+      mousedown→mousemove→mouseup sequence (same limitation hit earlier
+      with graph node dragging), dispatched real `MouseEvent`s directly to
+      exercise the actual listener code path — confirmed the list pane
+      resizes by the exact dragged delta, persists across a reload, and
+      that dragging back and forth doesn't drift.
+- [x] **Caught and fixed a real bug in the same pass:** `.list-pane` still
+      had a leftover CSS `min-width: 320px` from before the resizer
+      existed, which silently overrides an element's inline `width` (CSS
+      min-width always wins) — so the JS's own intended floor
+      (`LIST_PANE_MIN_WIDTH = 260`) was dead code in practice; dragging to
+      the minimum always landed on 320, not 260, with no error to indicate
+      why. Only visible by actually testing the clamp at the extreme, not
+      from a code read. Removed the redundant CSS min-width so the JS
+      constant is the single source of truth; re-verified the extreme-drag
+      case lands on exactly 260 afterward.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →

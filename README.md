@@ -62,6 +62,9 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
   `localStorage`, so they survive a full page reload (not tied to a session).
 - **Light/dark toggle.** The 🌓 button in the header cycles
   system → light → dark, remembered per-browser.
+- **Resizable panels.** Drag the thin divider between the article list and
+  the reader to trade list width for reading room. Persists per-browser;
+  desktop only (the mobile layout stacks panels vertically instead).
 - **Topic graph** — an Obsidian-style interactive graph of tags and how they
   co-occur, drilling into an article-level graph per tag. See "Topic graph"
   below.
