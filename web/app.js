@@ -1521,17 +1521,28 @@ function renderBriefCards(container, items, articles, emptyMessage, { saveable =
     div.className = "tension-card";
     div.innerHTML = briefCardBodyHtml(item, articles);
     if (saveable) {
-      const already = isIdeaSaved(item.observation);
       const footer = document.createElement("div");
       footer.className = "tension-save-row";
       const btn = document.createElement("button");
       btn.className = "tension-save-btn";
-      btn.textContent = already ? "★ Saved" : "☆ Save";
-      btn.disabled = already;
+
+      // A real toggle, not a one-way "Saved" dead-end — clicking it again
+      // unsaves in place, right where you saved it, instead of forcing a
+      // trip to the ⭐ Saved panel just to undo one click.
+      let savedRecord = findSavedIdea(item.observation);
+      const paint = () => {
+        btn.textContent = savedRecord ? "★ Unsave" : "☆ Save";
+        btn.classList.toggle("saved", !!savedRecord);
+      };
+      paint();
       btn.addEventListener("click", () => {
-        saveIdea(item, articles);
-        btn.textContent = "★ Saved";
-        btn.disabled = true;
+        if (savedRecord) {
+          removeSavedIdea(savedRecord.id);
+          savedRecord = null;
+        } else {
+          savedRecord = saveIdea(item, articles);
+        }
+        paint();
       });
       footer.appendChild(btn);
       div.appendChild(footer);
@@ -1805,14 +1816,22 @@ function persistSavedIdeas(list) {
 // observation can legitimately reappear across different Tension/Today
 // results (e.g. re-run with a wider scope) — saving it twice would just be
 // clutter, not two distinct ideas.
-function isIdeaSaved(observation) {
+function findSavedIdea(observation) {
   const norm = (observation || "").trim().toLowerCase();
-  if (!norm) return false;
-  return loadSavedIdeas().some((it) => (it.observation || "").trim().toLowerCase() === norm);
+  if (!norm) return null;
+  return loadSavedIdeas().find((it) => (it.observation || "").trim().toLowerCase() === norm) || null;
 }
 
+function isIdeaSaved(observation) {
+  return !!findSavedIdea(observation);
+}
+
+// Returns the saved record (so the caller can hold its id for a later
+// unsave) — or the already-saved record if this observation is already in
+// the list, rather than silently doing nothing.
 function saveIdea(item, articles) {
-  if (isIdeaSaved(item.observation)) return;
+  const existing = findSavedIdea(item.observation);
+  if (existing) return existing;
 
   // Resolve each claim's numeric source index into the actual article, and
   // remap claims onto a small per-item articles array (same shape/indexing
@@ -1852,6 +1871,7 @@ function saveIdea(item, articles) {
   const list = loadSavedIdeas();
   list.unshift(saved);
   persistSavedIdeas(list);
+  return saved;
 }
 
 function removeSavedIdea(id) {

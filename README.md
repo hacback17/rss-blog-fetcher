@@ -381,17 +381,29 @@ angle.
 
 Tension finder and Today's brief are both ephemeral by default — close the
 panel (or let the day roll over) and whatever you didn't act on is gone.
-The ⭐ Saved button (and the ☆ Save button on every Tension/Today card) fixes
-that: click it and the card is copied into a persistent list, independent
-of whichever batch of articles it was originally pulled from — so it's
-still there and still fully cited weeks later, even though the original
-retrieval is long gone. It's meant as a backlog: gather good material on
-busy days, actually write from it whenever you have time, and 🗑 Remove
-each one once you've used it (or decided not to). Saving the same
-observation twice is a no-op — the button shows "★ Saved" and disables
-itself once it's already in the list. Lives in `localStorage`, same as
-read/tag state — see "Where read/tags/manual edits actually live" if you
-want it to survive a browser switch.
+The ☆ Save button on every Tension/Today card fixes that: click it and the
+card is copied into a persistent list, independent of whichever batch of
+articles it was originally pulled from — so it's still there and still
+fully cited weeks later, even though the original retrieval is long gone.
+
+Saved items live in **one place**: the ⭐ Saved panel (topbar button).
+They're not part of the search index, the graph, or "Ask your archive" —
+this is a separate, personal backlog, not more archive content. Saving the
+same observation twice is a no-op (the button just reflects "already
+saved").
+
+To un-save something, you don't need to go find it in the ⭐ Saved panel —
+click the same button again right where you saved it (it reads "★ Unsave"
+once something's saved, and turns red on hover as a heads-up that clicking
+removes it). The ⭐ Saved panel itself also has a 🗑 Remove button on each
+card, for pruning the backlog once you've actually used an idea or decided
+against it.
+
+Like read/tag state, this lives in `localStorage` — per-browser, not
+synced anywhere. If you want it to survive a browser switch or show up on
+another device, say so; it isn't wired into the existing overlay
+export/import flow yet (see "Where read/tags/manual edits actually live"),
+but it's a small addition if you want it.
 
 ## Local AI app access (MCP server)
 

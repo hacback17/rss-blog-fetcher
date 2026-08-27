@@ -651,6 +651,31 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       a persistence bug, just a minor same-session staleness not worth
       fixing given how narrow the window is.
 
+## Done — v14 (in-place unsave, same day as v13)
+- [x] **User feedback caught a real UX gap almost immediately:** the v13
+      Save button was one-way — once clicked it read "★ Saved" and
+      disabled itself, so undoing a save meant finding the same card in
+      the ⭐ Saved panel and clicking 🗑 Remove there. User asked directly:
+      "can we not unsave it." Fixed: the button is now a real toggle —
+      `saveIdea()` returns the saved record (id included) instead of void,
+      and the card's button holds onto that record, so clicking it again
+      calls `removeSavedIdea()` in place and flips back to "☆ Save" without
+      ever leaving the Tension/Today panel. Added `findSavedIdea()` (used
+      by both the toggle and the existing dedup check) so "is this already
+      saved" and "what's its id" are the same lookup instead of two.
+      `.tension-save-btn.saved` turns red on hover as a small heads-up that
+      clicking removes it, rather than relying on the text alone.
+- [x] Verified live: saved a real card, clicked the same button again,
+      confirmed it read "☆ Save" and confirmed via direct localStorage
+      inspection that the item was actually gone (not just visually
+      toggled).
+- [x] **Clarified in README where saved items actually live** (the other
+      half of the user's question): only in the ⭐ Saved panel/
+      `localStorage`, not part of search/graph/Ask, not currently included
+      in the overlay export/import flow — flagged as a small future
+      addition if the user wants saved ideas portable across browsers/
+      devices, rather than assuming and building it unasked.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →
