@@ -322,9 +322,15 @@ what happened this week."
    the AI with a prompt that explicitly says not to manufacture a tension
    that isn't really there, and to return only what's genuine (as few as
    zero) rather than padding the list.
-3. Each result renders as a card: a short curious **hook**, the two
-   contrasting **claims** (each linking back to its source article), and one
-   line on **why** it's a real tension, not just two unrelated facts.
+3. Each result renders as a card, shaped around how [Kumar.thinks](https://instagram.com/kumar.thinks)
+   actually tells a story rather than as a flat fact sheet: a specific,
+   concrete **observation** (not a headline or a summary), the **claims**
+   behind it (each linking back to its source article), a genuine **open
+   question** to actually follow (not a "why this matters" line), and —
+   only when the articles themselves support it — a **complicating angle**
+   that keeps a real tension from flattening into a one-sided story. The
+   prompt is explicit that a complication should never be invented just to
+   fill the field.
 
 It reuses the exact same AI provider settings as "Ask your archive" (⚙ in
 that panel) — no separate setup. If nothing's configured yet, it'll point
@@ -365,8 +371,9 @@ of by hand:
    don't get resurfaced in a future day's brief.
 
 It reuses Ask's AI provider settings, and items render the same way as
-Tension finder's cards — a hook, one or two sourced/cited claims, and why
-it's worth noticing.
+Tension finder's cards — an observation, one or two sourced/cited claims, a
+genuine question to follow, and (when it's genuinely there) a complicating
+angle.
 
 ## Local AI app access (MCP server)
 

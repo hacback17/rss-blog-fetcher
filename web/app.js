@@ -1393,16 +1393,17 @@ async function handleCopyPrompt(question) {
 // duplicating that configuration.
 
 const TENSION_PROMPT_TEMPLATE = `You are helping a curiosity-driven storyteller find genuine tensions in the
-articles below — a surprising stat, a gap between a headline claim and lived/on-the-ground reality, a
-contradiction between two sources, an overlooked consequence. This is for real storytelling, not a listicle:
-do not manufacture a tension that isn't actually there, and do not pad the list with weak ones. If you only
-find one or two genuine tensions in this set, return only those.
+articles below, in the spirit of "Kumar.thinks": start from something real and specific, follow a genuine
+question rather than stating a conclusion, and let complexity stay complex instead of resolving it into a
+tidy point. This is for real storytelling, not a listicle: do not manufacture a tension that isn't actually
+there, and do not pad the list with weak ones. If you only find one or two genuine tensions in this set,
+return only those.
 
 For each tension you find, return a JSON object with exactly these keys:
-- "hook": a short, curious framing (a question or observation) someone could open a story with — not clickbait, not a headline.
-- "claim_a": {"text": one sentence stating the first fact/claim, "source": the article's number as a bare integer, e.g. 3 — not "[3]" or "Article 3"}
-- "claim_b": {"text": one sentence stating the contrasting fact/claim, "source": same format as claim_a}
-- "why": one sentence on why these two things are a genuine tension, not just two unrelated facts
+- "observation": a specific, concrete, ordinary detail or scene drawn from the articles — not an abstract summary or a headline. Write it the way someone would actually notice it, e.g. "A man in Lahaul who left college can still name almost every flower near his home" rather than "Local ecological knowledge persists in Lahaul."
+- "claims": an array of exactly 2 objects {"text": one sentence stating a fact/claim, "source": the article's number as a bare integer, e.g. 3 — not "[3]" or "Article 3"} — the two things actually in tension with each other.
+- "question": a genuine, open question that follows from the tension — not a statement, not "why this matters," an actual question someone could spend a story trying to answer. It should lead somewhere, not just restate the tension.
+- "complexity": OPTIONAL — one sentence noting a counter-angle, complication, or piece of context from the articles that keeps this from being a one-sided story (e.g. a real reason behind the "wrong" side, or what the obvious framing leaves out). Omit this key entirely if there's nothing genuine to add — do not invent a complication just to fill it.
 
 Return ONLY a JSON array of these objects — no markdown code fences, no commentary before or after. Return at
 most 5. If you find none, return [].
@@ -1486,27 +1487,41 @@ function renderClaimHtml(claim, articles) {
   return `<div class="tension-claim">${escapeHtml(claim?.text || "")}${cite}</div>`;
 }
 
-function renderTensions(tensions, articles) {
-  els.tensionResults.innerHTML = "";
-  if (!tensions.length) {
-    els.tensionResults.innerHTML =
-      '<p class="ask-empty">No genuine tensions found in this set — try a wider date range or a different topic.</p>';
+// Shared by Tension finder and Today's brief — both now speak the same
+// Kumar.thinks-shaped schema: a concrete observation (not a headline/claim),
+// its sourced evidence, a genuine open question to follow (not a "why this
+// matters" statement), and an optional complicating angle so a one-sided
+// story doesn't slip through unnoticed.
+function renderBriefCards(container, items, articles, emptyMessage) {
+  container.innerHTML = "";
+  if (!items.length) {
+    container.innerHTML = `<p class="ask-empty">${emptyMessage}</p>`;
     return;
   }
-  for (const t of tensions) {
+  for (const item of items) {
+    const claims = Array.isArray(item.claims) ? item.claims : [];
+    const claimsHtml = claims
+      .map((c) => renderClaimHtml(c, articles))
+      .join(claims.length > 1 ? '<div class="tension-vs">vs</div>' : "");
     const div = document.createElement("div");
     div.className = "tension-card";
     div.innerHTML = `
-      <p class="tension-hook">${escapeHtml(t.hook || "")}</p>
-      <div class="tension-claims">
-        ${renderClaimHtml(t.claim_a, articles)}
-        <div class="tension-vs">vs</div>
-        ${renderClaimHtml(t.claim_b, articles)}
-      </div>
-      ${t.why ? `<p class="tension-why">${escapeHtml(t.why)}</p>` : ""}
+      <p class="tension-hook">${escapeHtml(item.observation || "")}</p>
+      <div class="tension-claims">${claimsHtml}</div>
+      ${item.question ? `<p class="tension-why">${escapeHtml(item.question)}</p>` : ""}
+      ${item.complexity ? `<p class="tension-complexity">${escapeHtml(item.complexity)}</p>` : ""}
     `;
-    els.tensionResults.appendChild(div);
+    container.appendChild(div);
   }
+}
+
+function renderTensions(tensions, articles) {
+  renderBriefCards(
+    els.tensionResults,
+    tensions,
+    articles,
+    "No genuine tensions found in this set — try a wider date range or a different topic."
+  );
 }
 
 async function handleFindTensions() {
@@ -1549,16 +1564,19 @@ const DAILY_BRIEF_UNREAD_DAYS_FALLBACK = 7;
 const DAILY_BRIEF_SEEN_CAP = 150;
 
 const DAILY_BRIEF_PROMPT_TEMPLATE = `You are picking out what's genuinely worth a curiosity-driven storyteller's
-attention today, from the articles below (their unread backlog from the last few days). Look for: a surprising
+attention today, from the articles below (their unread backlog from the last few days), in the spirit of
+"Kumar.thinks": start from something real and specific, follow a genuine question rather than stating a
+conclusion, and let complexity stay complex instead of resolving it into a tidy point. Look for: a surprising
 fact, an overlooked consequence, a contradiction between two claims or sources, a hidden system behind
 something ordinary, a quiet change happening, a gap between assumption and reality, or a question nobody
 seems to be asking. This is not a news summary — skip anything that's just "here's what happened," and don't
 manufacture significance where there isn't any. If nothing here is genuinely worth surfacing, return [].
 
 For each item, return a JSON object with exactly these keys:
-- "hook": a short, curious framing (a question or observation) — not clickbait, not a headline.
-- "claims": an array of 1 or 2 objects {"text": one sentence stating the fact/claim, "source": the article's number as a bare integer, e.g. 3}. Use 2 when it's a genuine contradiction/tension between two things; use 1 when it's a single striking fact.
-- "why": one sentence on why this is worth noticing.
+- "observation": a specific, concrete, ordinary detail or fact drawn from the articles — not an abstract summary or a headline. Write it the way someone would actually notice it, plain language, no lecturing tone.
+- "claims": an array of 1 or 2 objects {"text": one sentence stating a fact/claim, "source": the article's number as a bare integer, e.g. 3 — not "[3]" or "Article 3"}. Use 2 when it's a genuine contradiction/tension between two things; use 1 when it's a single striking fact.
+- "question": a genuine, open question that follows from the observation — not a statement, not "why this matters," an actual question someone could spend a story trying to answer.
+- "complexity": OPTIONAL — one sentence noting a counter-angle, complication, or piece of context from the articles that keeps this from being a one-sided story. Omit this key entirely if there's nothing genuine to add — do not invent a complication just to fill it.
 
 Return ONLY a JSON array of these objects — no markdown code fences, no commentary before or after. Return at
 most 5, ranked most-interesting first.
@@ -1636,26 +1654,12 @@ function buildDailyBriefPrompt(articles) {
 }
 
 function renderDailyBriefItems(items, articles) {
-  els.todayResults.innerHTML = "";
-  if (!items.length) {
-    els.todayResults.innerHTML =
-      '<p class="ask-empty">Nothing stood out in your unread backlog today — check back tomorrow, or browse the archive directly.</p>';
-    return;
-  }
-  for (const item of items) {
-    const claims = Array.isArray(item.claims) ? item.claims : [];
-    const claimsHtml = claims
-      .map((c) => renderClaimHtml(c, articles))
-      .join(claims.length > 1 ? '<div class="tension-vs">vs</div>' : "");
-    const div = document.createElement("div");
-    div.className = "tension-card";
-    div.innerHTML = `
-      <p class="tension-hook">${escapeHtml(item.hook || "")}</p>
-      <div class="tension-claims">${claimsHtml}</div>
-      ${item.why ? `<p class="tension-why">${escapeHtml(item.why)}</p>` : ""}
-    `;
-    els.todayResults.appendChild(div);
-  }
+  renderBriefCards(
+    els.todayResults,
+    items,
+    articles,
+    "Nothing stood out in your unread backlog today — check back tomorrow, or browse the archive directly."
+  );
 }
 
 async function generateDailyBrief(force) {

@@ -262,7 +262,16 @@ body {
 .tension-claim cite { display: block; margin-top: 0.25rem; font-style: normal; font-size: 0.72rem; }
 .tension-claim cite a { color: var(--accent); }
 .tension-vs { align-self: center; font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.tension-why { margin: 0.55rem 0 0; font-size: 0.76rem; color: var(--text-muted); line-height: 1.45; }
+.tension-why { margin: 0.55rem 0 0; font-size: 0.76rem; color: var(--text-muted); line-height: 1.45; font-weight: 600; }
+.tension-complexity {
+  margin: 0.4rem 0 0;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--border);
+  font-size: 0.74rem;
+  font-style: italic;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
 .tension-loading { color: var(--text-muted); font-style: italic; font-size: 0.82rem; }
 .tension-error { color: var(--danger); font-size: 0.82rem; }
 

@@ -572,6 +572,48 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       constant is the single source of truth; re-verified the extreme-drag
       case lands on exactly 260 afterward.
 
+## Done — v12 (Kumar.thinks-shaped tension/brief schema)
+- [x] **Rewrote Tension finder's and Today's brief's output schema** from a
+      flat "hook + claims + why" fact sheet to match the user's actual
+      Kumar.thinks storytelling standards (curiosity before conclusions,
+      start from something specific/ordinary, follow a genuine question,
+      let complexity stay complex): `observation` (a concrete, specific
+      detail written the way someone would actually notice it, not an
+      abstract summary), `claims` (unchanged — sourced/cited evidence),
+      `question` (a genuine open question to follow, explicitly not a "why
+      this matters" statement), and an optional `complexity` (a counter-
+      angle or complication from the source articles, only when genuinely
+      there — the prompt explicitly forbids inventing one to fill the
+      field). Deliberately does NOT try to fabricate the personal doorway,
+      a specific person, or an ending — those stay the user's, matching
+      their own "do not invent an experience" rule; this only reshapes the
+      raw material the tool can honestly supply.
+- [x] **Found and fixed a real pre-existing bug while doing this:** the
+      Tension finder's prompt template had already been asking for this
+      new schema (`observation`/`claims`/`question`/`complexity`) from an
+      earlier point in this project that predates this session's visible
+      history, but `renderTensions()` had never been updated to match —
+      it was still reading `t.hook`/`t.claim_a`/`t.claim_b`/`t.why`, none
+      of which the AI was actually returning, so Tension finder cards were
+      silently rendering blank/broken before this fix. Caught only by
+      reading the actual prompt template text against the actual renderer
+      code side by side, not something a UI click-through alone would
+      necessarily have caught if the AI happened to also echo back legacy-
+      shaped keys.
+- [x] Unified `renderTensions`/`renderDailyBriefItems` into a single shared
+      `renderBriefCards()` (both features now render the identical card
+      shape), added `.tension-complexity` CSS (italic, left-bordered, muted
+      — visually subordinate to the now-bolded `.tension-why` question).
+- [x] Verified against the real Groq API with the new schema: retrieved 20
+      real unread articles, built the actual shipped prompt, got back 5
+      genuinely well-shaped items (an invasive-tree-to-carbon-credit
+      observation with a real complicating angle about biodiversity impact,
+      a Bonbibi/Sundarbans shrine-syncretism observation, a census/NPR
+      item) — confirmed every citation resolves to the correct real
+      article, confirmed all items carry observation+claims+question, and
+      confirmed the rendered DOM shows the question and complexity fields
+      visually distinct from each other.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →
