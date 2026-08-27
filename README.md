@@ -441,6 +441,7 @@ Configured in [`scraper/config/sites.json`](scraper/config/sites.json):
 | Indian Express | filtered to the Google News sitemap + a keyword allowlist (climate, environment, pollution, forest, ...) since article URLs don't encode category — best-effort, may miss some relevant articles |
 | The Hindu | filtered to the "Energy & Environment" section path |
 | Frontline | filtered to the "Environment" section path |
+| Scroll.in | **unfiltered — all topics, not just environment** (deliberate choice: Scroll's environment coverage doesn't sit under a clean URL path/keyword the way the others do, and the broader range fits). Uses its Google News-format sitemap, which only ever carries roughly the last day or two of articles — this is a rolling recent-news feed, not a backfillable historical archive |
 
 **Not tracked** — these don't fit a sitemap-driven full-article scraper, see
 `excludedSites` in `sites.json` for why: MoEF annual reports (PDF listing,
