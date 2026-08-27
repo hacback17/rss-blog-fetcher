@@ -40,6 +40,8 @@ const els = {};
   "ask-btn", "ask-panel", "ask-settings-btn", "ask-close-btn", "ask-settings", "ask-provider",
   "ask-key-row", "ask-api-key", "ask-local-url-row", "ask-local-url", "ask-local-model-row",
   "ask-local-model", "ask-prompt-template", "ask-messages", "ask-form", "ask-input", "ask-copy-btn",
+  "tension-btn", "tension-panel", "tension-close-btn", "tension-scope", "tension-tag",
+  "tension-find-btn", "tension-results",
   "add-text-btn", "add-text-backdrop", "add-text-modal", "add-text-close-btn", "add-text-title",
   "add-text-file-input", "add-text-body-input", "add-text-save-btn",
   "graph-btn", "graph-backdrop", "graph-modal", "graph-title", "graph-subtitle", "graph-back-btn",
@@ -340,6 +342,7 @@ function wireEvents() {
   els.exportSourcesBtn.addEventListener("click", exportSourcesConfig);
 
   wireAskPanel();
+  wireTensionPanel();
   wireAddTextModal();
   wireGraph();
 }
@@ -1246,14 +1249,18 @@ function retrieveForQuestion(question, limit = 12) {
   }
 }
 
-function buildAskPrompt(question, articles) {
-  const corpus = articles
+function formatArticlesForPrompt(articles, maxChars = 900) {
+  return articles
     .map((a, i) => {
       const date = (a.published_at || "").slice(0, 10) || "unknown date";
-      const text = (a.content_text || a.excerpt || "").slice(0, 900);
+      const text = (a.content_text || a.excerpt || "").slice(0, maxChars);
       return `[${i + 1}] (${date}) ${a.title} — ${a.site_name}${a.tags ? ` | tags: ${a.tags}` : ""}\n${text}`;
     })
     .join("\n\n---\n\n");
+}
+
+function buildAskPrompt(question, articles) {
+  const corpus = formatArticlesForPrompt(articles);
   const template = loadAiSettings().promptTemplate || DEFAULT_PROMPT_TEMPLATE;
   return template.replaceAll("{{articles}}", corpus).replaceAll("{{question}}", question);
 }
@@ -1265,7 +1272,16 @@ async function callProvider(prompt) {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${s.groqKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "openai/gpt-oss-20b", messages: [{ role: "user", content: prompt }], temperature: 0.3 }),
+      // gpt-oss is a reasoning model; without reasoning_effort it can burn its
+      // entire completion budget on hidden reasoning tokens and return empty
+      // content (finish_reason "length", 0 visible output) — same fix already
+      // applied on the scraper side in autotag.js.
+      body: JSON.stringify({
+        model: "openai/gpt-oss-20b",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3,
+        reasoning_effort: "low",
+      }),
     });
     if (!res.ok) throw new Error(`Groq error ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const data = await res.json();
@@ -1360,6 +1376,151 @@ async function handleCopyPrompt(question) {
   }
   els.askInput.value = "";
   els.askMessages.scrollTop = els.askMessages.scrollHeight;
+}
+
+// ---------- tension finder ----------
+// Same idea as "Ask", but instead of answering a question, asks the AI to
+// surface genuine tensions across a set of recent articles — a surprising
+// stat, a gap between a headline claim and lived reality, a contradiction
+// between two sources — which is the actual raw material curiosity-driven
+// storytelling looks for, rather than a plain summary of "what happened."
+// Reuses the same AI provider settings as Ask (⚙ there) rather than
+// duplicating that configuration.
+
+const TENSION_PROMPT_TEMPLATE = `You are helping a curiosity-driven storyteller find genuine tensions in the
+articles below — a surprising stat, a gap between a headline claim and lived/on-the-ground reality, a
+contradiction between two sources, an overlooked consequence. This is for real storytelling, not a listicle:
+do not manufacture a tension that isn't actually there, and do not pad the list with weak ones. If you only
+find one or two genuine tensions in this set, return only those.
+
+For each tension you find, return a JSON object with exactly these keys:
+- "hook": a short, curious framing (a question or observation) someone could open a story with — not clickbait, not a headline.
+- "claim_a": {"text": one sentence stating the first fact/claim, "source": the article's number as a bare integer, e.g. 3 — not "[3]" or "Article 3"}
+- "claim_b": {"text": one sentence stating the contrasting fact/claim, "source": same format as claim_a}
+- "why": one sentence on why these two things are a genuine tension, not just two unrelated facts
+
+Return ONLY a JSON array of these objects — no markdown code fences, no commentary before or after. Return at
+most 5. If you find none, return [].
+
+ARTICLES:
+
+{{articles}}`;
+
+function wireTensionPanel() {
+  els.tensionBtn.addEventListener("click", () => {
+    populateTensionTagFilter();
+    els.tensionPanel.classList.toggle("hidden");
+  });
+  els.tensionCloseBtn.addEventListener("click", () => els.tensionPanel.classList.add("hidden"));
+  els.tensionFindBtn.addEventListener("click", handleFindTensions);
+}
+
+function populateTensionTagFilter() {
+  const currentValue = els.tensionTag.value;
+  const rows = queryAll(
+    state.db,
+    `SELECT t.id, t.name FROM tags t JOIN article_tags at ON at.tag_id = t.id
+     GROUP BY t.id ORDER BY COUNT(*) DESC`
+  );
+  els.tensionTag.innerHTML =
+    '<option value="">Any tag</option>' + rows.map((r) => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("");
+  els.tensionTag.value = currentValue;
+}
+
+// days=0 means "no date filter, just the most recent `limit`".
+function retrieveForTensions(days, tagId, limit = 20) {
+  const params = { $limit: limit };
+  let dateClause = "";
+  if (days > 0) {
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+    dateClause = "AND substr(COALESCE(a.published_at, a.fetched_at), 1, 10) >= $cutoff";
+    params.$cutoff = cutoff;
+  }
+  let tagClause = "";
+  if (tagId) {
+    tagClause = "AND EXISTS (SELECT 1 FROM article_tags at2 WHERE at2.article_id = a.id AND at2.tag_id = $tagId)";
+    params.$tagId = tagId;
+  }
+  return queryAll(
+    state.db,
+    `SELECT a.id, a.title, a.site_name, a.published_at, a.url, a.excerpt, a.content_text,
+            (SELECT GROUP_CONCAT(t.name, ', ') FROM article_tags at2 JOIN tags t ON t.id = at2.tag_id WHERE at2.article_id = a.id) AS tags
+     FROM articles a
+     WHERE 1=1 ${dateClause} ${tagClause}
+     ORDER BY COALESCE(a.published_at, a.fetched_at) DESC LIMIT $limit`,
+    params
+  );
+}
+
+function buildTensionPrompt(articles) {
+  return TENSION_PROMPT_TEMPLATE.replaceAll("{{articles}}", formatArticlesForPrompt(articles, 500));
+}
+
+// The prompt asks for bare JSON, but models sometimes wrap it in a markdown
+// fence anyway — strip that defensively rather than failing on it.
+function parseTensionResponse(raw) {
+  const text = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  const parsed = JSON.parse(text);
+  if (!Array.isArray(parsed)) throw new Error("Model didn't return a JSON array");
+  return parsed;
+}
+
+function renderTensions(tensions, articles) {
+  els.tensionResults.innerHTML = "";
+  if (!tensions.length) {
+    els.tensionResults.innerHTML =
+      '<p class="ask-empty">No genuine tensions found in this set — try a wider date range or a different topic.</p>';
+    return;
+  }
+  const claimHtml = (claim) => {
+    // Despite the prompt asking for a bare integer, models sometimes return
+    // "[3]" or "Article 3" anyway — pull the first number out rather than
+    // trusting the format, so a citation link still resolves either way.
+    const match = String(claim?.source ?? "").match(/\d+/);
+    const idx = match ? Number(match[0]) : 0;
+    const src = articles[idx - 1];
+    const cite = src
+      ? `<cite>[${idx}] <a href="${escapeHtml(src.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(src.title)}</a> — ${escapeHtml(src.site_name)}, ${formatDate(src.published_at)}</cite>`
+      : "";
+    return `<div class="tension-claim">${escapeHtml(claim?.text || "")}${cite}</div>`;
+  };
+  for (const t of tensions) {
+    const div = document.createElement("div");
+    div.className = "tension-card";
+    div.innerHTML = `
+      <p class="tension-hook">${escapeHtml(t.hook || "")}</p>
+      <div class="tension-claims">
+        ${claimHtml(t.claim_a)}
+        <div class="tension-vs">vs</div>
+        ${claimHtml(t.claim_b)}
+      </div>
+      ${t.why ? `<p class="tension-why">${escapeHtml(t.why)}</p>` : ""}
+    `;
+    els.tensionResults.appendChild(div);
+  }
+}
+
+async function handleFindTensions() {
+  const days = Number(els.tensionScope.value);
+  const tagId = Number(els.tensionTag.value) || 0;
+  els.tensionResults.innerHTML = '<p class="tension-loading">Gathering recent articles…</p>';
+
+  const articles = retrieveForTensions(days, tagId);
+  if (!articles.length) {
+    els.tensionResults.innerHTML = '<p class="ask-empty">No articles found for that scope — try widening the date range.</p>';
+    return;
+  }
+
+  els.tensionResults.innerHTML = `<p class="tension-loading">Found ${articles.length} article(s), asking the AI to find tensions…</p>`;
+
+  try {
+    const prompt = buildTensionPrompt(articles);
+    const raw = await callProvider(prompt);
+    const tensions = parseTensionResponse(raw);
+    renderTensions(tensions, articles);
+  } catch (err) {
+    els.tensionResults.innerHTML = `<p class="tension-error">Error: ${escapeHtml(err.message)}</p>`;
+  }
 }
 
 // ---------- misc ----------

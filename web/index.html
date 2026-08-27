@@ -14,6 +14,7 @@
         <div class="topbar-actions">
           <button id="graph-btn" title="Explore as a graph">🕸 Graph</button>
           <button id="ask-btn" title="Ask your archive (AI Q&amp;A)">💬 Ask</button>
+          <button id="tension-btn" title="Find tensions and contradictions for storytelling">⚡ Tensions</button>
           <button id="sources-btn" title="Configured sources">🔗 Sources</button>
           <button id="reports-btn" title="Pattern analysis reports">📊 Reports</button>
           <button id="log-btn" title="Scraping run log (last 7 days)">📋 Log</button>
@@ -127,6 +128,36 @@
         <button type="button" id="ask-copy-btn" title="Copy the composed prompt instead of calling an API">⧉ Copy prompt</button>
         <button type="submit">Ask</button>
       </form>
+    </div>
+
+    <div id="tension-panel" class="ask-panel hidden">
+      <div class="ask-header">
+        <strong>Tension finder</strong>
+        <button id="tension-close-btn" title="Close">×</button>
+      </div>
+      <div class="tension-controls">
+        <label>Scope
+          <select id="tension-scope">
+            <option value="7">Last 7 days</option>
+            <option value="14">Last 14 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="0">Most recent 25 (any date)</option>
+          </select>
+        </label>
+        <label>Topic (optional)
+          <select id="tension-tag"><option value="">Any tag</option></select>
+        </label>
+        <button id="tension-find-btn" class="primary-btn">⚡ Find tensions</button>
+      </div>
+      <div id="tension-results" class="tension-results">
+        <p class="ask-empty">
+          Pulls recent articles from your archive and asks the AI to find genuine tensions in
+          them — a surprising stat, a gap between a headline number and lived reality, a
+          contradiction between two sources. Built for curiosity-driven storytelling, not a
+          news summary. Uses the same AI provider configured in 💬 Ask (open that panel's ⚙ if
+          you haven't set one up yet).
+        </p>
+      </div>
     </div>
 
     <div id="reports-menu" class="data-menu hidden">

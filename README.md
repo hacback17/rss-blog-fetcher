@@ -67,6 +67,9 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
   below.
 - **Ask your archive** — an AI Q&A chat over your own data, see "Ask your
   archive" below.
+- **Tension finder** — surfaces genuine contradictions and surprising gaps
+  across recent articles, for curiosity-driven storytelling rather than a
+  news summary. See "Tension finder" below.
 - **Local AI app access (MCP server)** — lets a locally-installed Claude
   Desktop app search/read the archive directly, no copy/paste. See "Local AI
   app access" below.
@@ -297,6 +300,41 @@ per-query cost. The prompt itself is also fully editable: ⚙ settings has a
 **"Prompt template"** field (`{{articles}}` / `{{question}}` placeholders)
 used by every provider *and* by "Copy prompt", so your own specially-crafted
 instructions apply everywhere, not just when copying.
+
+## Tension finder
+
+The ⚡ Tensions button is a different question than "Ask": instead of
+answering something you type, it looks at a set of recent articles and asks
+the AI to find **genuine tensions** in them — a surprising stat, a gap
+between a headline claim and lived/on-the-ground reality, a contradiction
+between two sources, an overlooked consequence. That's the actual raw
+material curiosity-driven storytelling looks for, as opposed to "here's
+what happened this week."
+
+1. Pick a **scope** — last 7/14/30 days, or the most recent 25 regardless of
+   date — and optionally narrow it to one **tag**.
+2. It pulls that set of articles (title, excerpt, tags) and sends them to
+   the AI with a prompt that explicitly says not to manufacture a tension
+   that isn't really there, and to return only what's genuine (as few as
+   zero) rather than padding the list.
+3. Each result renders as a card: a short curious **hook**, the two
+   contrasting **claims** (each linking back to its source article), and one
+   line on **why** it's a real tension, not just two unrelated facts.
+
+It reuses the exact same AI provider settings as "Ask your archive" (⚙ in
+that panel) — no separate setup. If nothing's configured yet, it'll point
+you there.
+
+**A note on the Groq model:** `openai/gpt-oss-20b` is a reasoning model —
+without `reasoning_effort: "low"` set on the request, it can burn its entire
+completion budget on hidden reasoning tokens and return genuinely empty
+content (`finish_reason: "length"`, 0 visible output). This was already
+worked around on the scraper side (`autotag.js`) but had been missed in the
+browser's `callProvider()`, silently affecting Ask too. Fixed here — both
+features now set it. Verified directly against the real Groq API before and
+after: the unfixed call returned 0 characters of content with 2046
+reasoning tokens burned; the fixed call returned real content immediately
+(`finish_reason: "stop"`).
 
 ## Local AI app access (MCP server)
 

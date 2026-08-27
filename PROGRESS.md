@@ -467,6 +467,50 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       with working snippets; `list_sources` returned all 5 real sources with
       correct per-site counts).
 
+## Done — v9 (Scroll.in source, tension finder, Groq reasoning_effort fix)
+- [x] **Added Scroll.in as a scraping source** — `scraper/config/sites.json`,
+      pointed at its Google News-format sitemap. Deliberately unfiltered
+      (all topics), a user choice made explicit via AskUserQuestion rather
+      than assumed, since Scroll doesn't have a clean environment-only URL
+      path/keyword the way the other filtered sources do, and the user's
+      actual storytelling scope (society/education/AI/everyday life, not
+      just environment) fits the broader coverage. Verified live: ran
+      `node --experimental-sqlite src/run.js --site=scroll` for real, got 79
+      genuine articles (spanning politics, culture, world news, and real
+      environment pieces), confirmed in the Sources panel and search in the
+      local preview, committed the resulting `data/blogs.db` update.
+- [x] **Tension finder** — new ⚡ Tensions panel, built after the user
+      described their actual storytelling practice (curiosity-driven,
+      finds contradictions/surprising gaps rather than reporting news) and
+      asked for the archive to actively support that. Pulls a scoped set of
+      recent articles (7/14/30 days or most-recent-25, optional tag filter)
+      and asks the configured AI provider (reuses Ask's ⚙ settings, no
+      duplicate config) to return genuine tensions as structured JSON —
+      a hook, two contrasting sourced claims, and why it's a real tension —
+      explicitly instructed not to manufacture one that isn't there.
+      Rendered as cards with clickable citations back to source articles.
+      Verified with a **real** Groq API call (not a mock): retrieved 20
+      real "Water Resources"-tagged articles from the live archive, built
+      the exact production prompt, and got back two genuinely good,
+      correctly-cited tensions (e.g. a Sundarbans cultural-ecology piece
+      vs. an invasive-species-trade piece; a US carbon-emissions/water-loss
+      study vs. India's unregulated data-centre water use) — confirmed via
+      direct DOM injection that the citations resolve to the correct real
+      articles and the cards render with the intended styling.
+- [x] **Fixed a real, pre-existing bug found during that verification:**
+      `web/app.js`'s `callProvider()` was calling Groq's `gpt-oss-20b`
+      (a reasoning model) without `reasoning_effort: "low"` — already known
+      to be required and fixed on the scraper side (`autotag.js`), but
+      never applied to the browser's Ask/Tension code path. Without it, a
+      real API call reproduced the failure directly: `finish_reason:
+      "length"`, 2046 of 2048 completion tokens burned on hidden reasoning,
+      0 characters of actual content returned. This silently affected "Ask
+      your archive" too, not just the new feature — likely explains any
+      past empty/blank Groq answers there. Fixed by adding the same
+      parameter used on the scraper side; re-ran the identical real request
+      afterward and got `finish_reason: "stop"` with real content
+      immediately.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →
