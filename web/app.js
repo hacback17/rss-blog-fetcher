@@ -44,6 +44,7 @@ const els = {};
   "tension-btn", "tension-panel", "tension-close-btn", "tension-scope", "tension-tag",
   "tension-find-btn", "tension-results",
   "today-btn", "today-badge", "today-panel", "today-close-btn", "today-refresh-btn", "today-results",
+  "saved-btn", "saved-panel", "saved-close-btn", "saved-results",
   "add-text-btn", "add-text-backdrop", "add-text-modal", "add-text-close-btn", "add-text-title",
   "add-text-file-input", "add-text-body-input", "add-text-save-btn",
   "graph-btn", "graph-backdrop", "graph-modal", "graph-title", "graph-subtitle", "graph-back-btn",
@@ -347,6 +348,7 @@ function wireEvents() {
   wireAskPanel();
   wireTensionPanel();
   wireTodayPanel();
+  wireSavedPanel();
   wireAddTextModal();
   wireGraph();
   wirePaneResizer();
@@ -1487,30 +1489,53 @@ function renderClaimHtml(claim, articles) {
   return `<div class="tension-claim">${escapeHtml(claim?.text || "")}${cite}</div>`;
 }
 
-// Shared by Tension finder and Today's brief — both now speak the same
-// Kumar.thinks-shaped schema: a concrete observation (not a headline/claim),
-// its sourced evidence, a genuine open question to follow (not a "why this
-// matters" statement), and an optional complicating angle so a one-sided
-// story doesn't slip through unnoticed.
-function renderBriefCards(container, items, articles, emptyMessage) {
+// Shared by Tension finder, Today's brief, and Saved story ideas — all
+// speak the same Kumar.thinks-shaped schema: a concrete observation (not a
+// headline/claim), its sourced evidence, a genuine open question to follow
+// (not a "why this matters" statement), and an optional complicating angle
+// so a one-sided story doesn't slip through unnoticed.
+function briefCardBodyHtml(item, articles) {
+  const claims = Array.isArray(item.claims) ? item.claims : [];
+  const claimsHtml = claims
+    .map((c) => renderClaimHtml(c, articles))
+    .join(claims.length > 1 ? '<div class="tension-vs">vs</div>' : "");
+  return `
+    <p class="tension-hook">${escapeHtml(item.observation || "")}</p>
+    <div class="tension-claims">${claimsHtml}</div>
+    ${item.question ? `<p class="tension-why">${escapeHtml(item.question)}</p>` : ""}
+    ${item.complexity ? `<p class="tension-complexity">${escapeHtml(item.complexity)}</p>` : ""}
+  `;
+}
+
+// saveable=true (Tension finder / Today's brief) adds a ☆ Save button that
+// copies the item into the persistent "saved ideas" list — good material
+// from a busy day shouldn't just vanish once the panel closes.
+function renderBriefCards(container, items, articles, emptyMessage, { saveable = false } = {}) {
   container.innerHTML = "";
   if (!items.length) {
     container.innerHTML = `<p class="ask-empty">${emptyMessage}</p>`;
     return;
   }
   for (const item of items) {
-    const claims = Array.isArray(item.claims) ? item.claims : [];
-    const claimsHtml = claims
-      .map((c) => renderClaimHtml(c, articles))
-      .join(claims.length > 1 ? '<div class="tension-vs">vs</div>' : "");
     const div = document.createElement("div");
     div.className = "tension-card";
-    div.innerHTML = `
-      <p class="tension-hook">${escapeHtml(item.observation || "")}</p>
-      <div class="tension-claims">${claimsHtml}</div>
-      ${item.question ? `<p class="tension-why">${escapeHtml(item.question)}</p>` : ""}
-      ${item.complexity ? `<p class="tension-complexity">${escapeHtml(item.complexity)}</p>` : ""}
-    `;
+    div.innerHTML = briefCardBodyHtml(item, articles);
+    if (saveable) {
+      const already = isIdeaSaved(item.observation);
+      const footer = document.createElement("div");
+      footer.className = "tension-save-row";
+      const btn = document.createElement("button");
+      btn.className = "tension-save-btn";
+      btn.textContent = already ? "★ Saved" : "☆ Save";
+      btn.disabled = already;
+      btn.addEventListener("click", () => {
+        saveIdea(item, articles);
+        btn.textContent = "★ Saved";
+        btn.disabled = true;
+      });
+      footer.appendChild(btn);
+      div.appendChild(footer);
+    }
     container.appendChild(div);
   }
 }
@@ -1520,7 +1545,8 @@ function renderTensions(tensions, articles) {
     els.tensionResults,
     tensions,
     articles,
-    "No genuine tensions found in this set — try a wider date range or a different topic."
+    "No genuine tensions found in this set — try a wider date range or a different topic.",
+    { saveable: true }
   );
 }
 
@@ -1658,7 +1684,8 @@ function renderDailyBriefItems(items, articles) {
     els.todayResults,
     items,
     articles,
-    "Nothing stood out in your unread backlog today — check back tomorrow, or browse the archive directly."
+    "Nothing stood out in your unread backlog today — check back tomorrow, or browse the archive directly.",
+    { saveable: true }
   );
 }
 
@@ -1747,6 +1774,126 @@ function wireTodayPanel() {
   });
   els.todayCloseBtn.addEventListener("click", () => els.todayPanel.classList.add("hidden"));
   els.todayRefreshBtn.addEventListener("click", () => generateDailyBrief(true));
+}
+
+// ---------- saved story ideas ----------
+// A ☆ Save button on any Tension/Today card copies that item here,
+// permanently (until removed) — so a good observation found on a busy day
+// isn't just lost once the panel closes, and there's a backlog to draw
+// from whenever there's actually time to write. Saved items are fully
+// self-contained (cited articles are resolved and embedded at save time,
+// not referenced by index into a batch that won't exist later), so they
+// render with the exact same briefCardBodyHtml()/renderClaimHtml() used
+// live, no special-casing needed.
+
+const SAVED_IDEAS_KEY = "blogArchive.savedIdeas.v1";
+
+function loadSavedIdeas() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(SAVED_IDEAS_KEY));
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedIdeas(list) {
+  localStorage.setItem(SAVED_IDEAS_KEY, JSON.stringify(list));
+}
+
+// Dedup by observation text rather than an id, since the same genuine
+// observation can legitimately reappear across different Tension/Today
+// results (e.g. re-run with a wider scope) — saving it twice would just be
+// clutter, not two distinct ideas.
+function isIdeaSaved(observation) {
+  const norm = (observation || "").trim().toLowerCase();
+  if (!norm) return false;
+  return loadSavedIdeas().some((it) => (it.observation || "").trim().toLowerCase() === norm);
+}
+
+function saveIdea(item, articles) {
+  if (isIdeaSaved(item.observation)) return;
+
+  // Resolve each claim's numeric source index into the actual article, and
+  // remap claims onto a small per-item articles array (same shape/indexing
+  // convention as the live case) so it's self-contained and renders with
+  // the exact same renderClaimHtml() later, independent of whatever batch
+  // of articles happened to be on screen at save time.
+  const usedIndices = [];
+  for (const c of item.claims || []) {
+    const m = String(c?.source ?? "").match(/\d+/);
+    const idx = m ? Number(m[0]) : 0;
+    if (idx) usedIndices.push(idx);
+  }
+  const uniqueIndices = [...new Set(usedIndices)];
+  const localArticles = uniqueIndices.map((idx) => articles[idx - 1]).filter(Boolean);
+  const remappedClaims = (item.claims || []).map((c) => {
+    const m = String(c?.source ?? "").match(/\d+/);
+    const origIdx = m ? Number(m[0]) : 0;
+    const newIdx = uniqueIndices.indexOf(origIdx) + 1;
+    return { text: c.text, source: newIdx || 0 };
+  });
+
+  const saved = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    savedAt: new Date().toISOString(),
+    observation: item.observation,
+    question: item.question,
+    complexity: item.complexity,
+    claims: remappedClaims,
+    articles: localArticles.map((a) => ({
+      id: a.id,
+      title: a.title,
+      url: a.url,
+      site_name: a.site_name,
+      published_at: a.published_at,
+    })),
+  };
+  const list = loadSavedIdeas();
+  list.unshift(saved);
+  persistSavedIdeas(list);
+}
+
+function removeSavedIdea(id) {
+  persistSavedIdeas(loadSavedIdeas().filter((it) => it.id !== id));
+}
+
+function renderSavedIdeas() {
+  const items = loadSavedIdeas();
+  els.savedResults.innerHTML = "";
+  if (!items.length) {
+    els.savedResults.innerHTML =
+      '<p class="ask-empty">Save an observation from ⚡ Tensions or 🔆 Today with the ☆ button on its card, and it stays here — a backlog to draw from whenever you actually have time to write, instead of losing a good one on a busy day.</p>';
+    return;
+  }
+  for (const item of items) {
+    const div = document.createElement("div");
+    div.className = "tension-card";
+    div.innerHTML = briefCardBodyHtml(item, item.articles || []);
+
+    const footer = document.createElement("div");
+    footer.className = "tension-save-row";
+    footer.innerHTML = `<span class="tension-saved-date">Saved ${formatDate(item.savedAt)}</span>`;
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "tension-remove-btn";
+    removeBtn.textContent = "🗑 Remove";
+    removeBtn.addEventListener("click", () => {
+      removeSavedIdea(item.id);
+      renderSavedIdeas();
+    });
+    footer.appendChild(removeBtn);
+    div.appendChild(footer);
+
+    els.savedResults.appendChild(div);
+  }
+}
+
+function wireSavedPanel() {
+  els.savedBtn.addEventListener("click", () => {
+    els.savedPanel.classList.toggle("hidden");
+    if (!els.savedPanel.classList.contains("hidden")) renderSavedIdeas();
+  });
+  els.savedCloseBtn.addEventListener("click", () => els.savedPanel.classList.add("hidden"));
 }
 
 // ---------- pane resizer ----------

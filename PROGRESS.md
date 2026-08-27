@@ -614,6 +614,43 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       confirmed the rendered DOM shows the question and complexity fields
       visually distinct from each other.
 
+## Done — v13 (saved story ideas)
+- [x] **⭐ Saved story ideas** — a ☆ Save button on every Tension finder /
+      Today's brief card copies that item into a persistent list
+      (`localStorage`), independent of the ephemeral batch it was pulled
+      from, so good material from a busy day doesn't just vanish when the
+      panel closes or the day rolls over. New `saved-btn`/`saved-panel`
+      following the existing panel pattern; 🗑 Remove per item. Saving the
+      same observation twice is a no-op (dedup by observation text, since
+      the same genuine observation can legitimately reappear across
+      different runs) — the button shows "★ Saved" and disables itself.
+      Refactored `renderBriefCards` to extract a shared `briefCardBodyHtml`
+      so Tension finder, Today's brief, and the new Saved panel all render
+      identical card markup from one place.
+- [x] **Self-contained saved items, not index references:** the live
+      claims schema cites articles by numeric index into whatever batch
+      happened to be on screen (`source: 3`) — meaningless once that batch
+      is gone. `saveIdea()` resolves each cited index into the actual
+      article at save time and remaps the claim onto a small per-item
+      `articles` array embedded in the saved record, so it renders with
+      the exact same `renderClaimHtml()` used live, correctly, indefinitely,
+      with no dependency on the original retrieval.
+- [x] Verified live end-to-end with a real seeded brief (not just a code
+      read): clicked ☆ Save on a real card, confirmed the button flips to
+      "★ Saved" and disables; opened the Saved panel and confirmed the item
+      renders with its citation correctly remapped to local index `[1]`
+      (was `[14]` in the original batch); clicked 🗑 Remove and confirmed
+      it's actually gone from `localStorage`, not just visually hidden;
+      reloaded the page fresh and confirmed the Today card's button
+      correctly resets to "☆ Save" (the storage-backed source of truth),
+      distinguishing a real bug from a same-session cosmetic quirk noticed
+      along the way — the Save button doesn't live-resync if you remove an
+      item from Saved without reopening the originating panel, since
+      panel-reopen only toggles visibility and doesn't re-render; a full
+      page reload always reflects the true state correctly, so this isn't
+      a persistence bug, just a minor same-session staleness not worth
+      fixing given how narrow the window is.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →

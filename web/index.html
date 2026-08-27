@@ -16,6 +16,7 @@
           <button id="graph-btn" title="Explore as a graph">🕸 Graph</button>
           <button id="ask-btn" title="Ask your archive (AI Q&amp;A)">💬 Ask</button>
           <button id="tension-btn" title="Find tensions and contradictions for storytelling">⚡ Tensions</button>
+          <button id="saved-btn" title="Saved story ideas">⭐ Saved</button>
           <button id="sources-btn" title="Configured sources">🔗 Sources</button>
           <button id="reports-btn" title="Pattern analysis reports">📊 Reports</button>
           <button id="log-btn" title="Scraping run log (last 7 days)">📋 Log</button>
@@ -173,6 +174,20 @@
           contradiction between two sources. Built for curiosity-driven storytelling, not a
           news summary. Uses the same AI provider configured in 💬 Ask (open that panel's ⚙ if
           you haven't set one up yet).
+        </p>
+      </div>
+    </div>
+
+    <div id="saved-panel" class="ask-panel hidden">
+      <div class="ask-header">
+        <strong>Saved story ideas</strong>
+        <button id="saved-close-btn" title="Close">×</button>
+      </div>
+      <div id="saved-results" class="tension-results">
+        <p class="ask-empty">
+          Save an observation from ⚡ Tensions or 🔆 Today with the ☆ button on its card, and it
+          stays here — a backlog to draw from whenever you actually have time to write, instead
+          of losing a good one on a busy day.
         </p>
       </div>
     </div>

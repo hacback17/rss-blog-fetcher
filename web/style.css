@@ -275,6 +275,28 @@ body {
 .tension-loading { color: var(--text-muted); font-style: italic; font-size: 0.82rem; }
 .tension-error { color: var(--danger); font-size: 0.82rem; }
 
+.tension-save-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+.tension-save-btn, .tension-remove-btn {
+  font-size: 0.72rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+.tension-save-btn:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+.tension-save-btn:disabled { opacity: 0.65; cursor: default; }
+.tension-remove-btn:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+.tension-saved-date { font-size: 0.68rem; color: var(--text-muted); }
+
 /* --- Today's brief --- */
 #today-btn { position: relative; }
 .today-badge {

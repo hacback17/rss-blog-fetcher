@@ -75,6 +75,8 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
   news summary. See "Tension finder" below.
 - **Today's brief** — auto-generates once a day from your unread backlog, no
   scope-picking needed. See "Today's brief" below.
+- **Saved story ideas** — ⭐ Save any Tension finder/Today's brief card to
+  keep it past that panel closing. See "Saved story ideas" below.
 - **Local AI app access (MCP server)** — lets a locally-installed Claude
   Desktop app search/read the archive directly, no copy/paste. See "Local AI
   app access" below.
@@ -374,6 +376,22 @@ It reuses Ask's AI provider settings, and items render the same way as
 Tension finder's cards — an observation, one or two sourced/cited claims, a
 genuine question to follow, and (when it's genuinely there) a complicating
 angle.
+
+## Saved story ideas
+
+Tension finder and Today's brief are both ephemeral by default — close the
+panel (or let the day roll over) and whatever you didn't act on is gone.
+The ⭐ Saved button (and the ☆ Save button on every Tension/Today card) fixes
+that: click it and the card is copied into a persistent list, independent
+of whichever batch of articles it was originally pulled from — so it's
+still there and still fully cited weeks later, even though the original
+retrieval is long gone. It's meant as a backlog: gather good material on
+busy days, actually write from it whenever you have time, and 🗑 Remove
+each one once you've used it (or decided not to). Saving the same
+observation twice is a no-op — the button shows "★ Saved" and disables
+itself once it's already in the list. Lives in `localStorage`, same as
+read/tag state — see "Where read/tags/manual edits actually live" if you
+want it to survive a browser switch.
 
 ## Local AI app access (MCP server)
 
