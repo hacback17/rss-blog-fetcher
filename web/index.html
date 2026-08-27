@@ -12,6 +12,7 @@
       <div class="topbar-row">
         <h1>Blog Archive</h1>
         <div class="topbar-actions">
+          <button id="today-btn" title="Today's brief — auto-surfaced curiosity-worthy items">🔆 Today<span id="today-badge" class="today-badge hidden"></span></button>
           <button id="graph-btn" title="Explore as a graph">🕸 Graph</button>
           <button id="ask-btn" title="Ask your archive (AI Q&amp;A)">💬 Ask</button>
           <button id="tension-btn" title="Find tensions and contradictions for storytelling">⚡ Tensions</button>
@@ -128,6 +129,22 @@
         <button type="button" id="ask-copy-btn" title="Copy the composed prompt instead of calling an API">⧉ Copy prompt</button>
         <button type="submit">Ask</button>
       </form>
+    </div>
+
+    <div id="today-panel" class="ask-panel hidden">
+      <div class="ask-header">
+        <strong>Today's brief</strong>
+        <button id="today-refresh-btn" title="Regenerate (ignores today's cache)">↻</button>
+        <button id="today-close-btn" title="Close">×</button>
+      </div>
+      <div id="today-results" class="tension-results">
+        <p class="ask-empty">
+          Auto-generated once a day from your unread articles from the last few days — the same
+          "find what's genuinely worth noticing" reasoning as ⚡ Tensions, but picked for you
+          instead of you setting a scope. Uses the AI provider configured in 💬 Ask. Already-shown
+          items won't repeat in a future brief.
+        </p>
+      </div>
     </div>
 
     <div id="tension-panel" class="ask-panel hidden">

@@ -42,6 +42,7 @@ const els = {};
   "ask-local-model", "ask-prompt-template", "ask-messages", "ask-form", "ask-input", "ask-copy-btn",
   "tension-btn", "tension-panel", "tension-close-btn", "tension-scope", "tension-tag",
   "tension-find-btn", "tension-results",
+  "today-btn", "today-badge", "today-panel", "today-close-btn", "today-refresh-btn", "today-results",
   "add-text-btn", "add-text-backdrop", "add-text-modal", "add-text-close-btn", "add-text-title",
   "add-text-file-input", "add-text-body-input", "add-text-save-btn",
   "graph-btn", "graph-backdrop", "graph-modal", "graph-title", "graph-subtitle", "graph-back-btn",
@@ -202,6 +203,7 @@ async function init() {
   wireEvents();
   renderRecentSearches();
   runQuery();
+  maybeGenerateDailyBriefOnLoad();
 }
 
 function populateSiteFilter() {
@@ -343,6 +345,7 @@ function wireEvents() {
 
   wireAskPanel();
   wireTensionPanel();
+  wireTodayPanel();
   wireAddTextModal();
   wireGraph();
 }
@@ -1457,12 +1460,28 @@ function buildTensionPrompt(articles) {
 }
 
 // The prompt asks for bare JSON, but models sometimes wrap it in a markdown
-// fence anyway — strip that defensively rather than failing on it.
-function parseTensionResponse(raw) {
+// fence anyway — strip that defensively rather than failing on it. Shared by
+// tension finder and the daily brief, which use the same "structured JSON
+// array" response shape.
+function parseJsonArrayResponse(raw) {
   const text = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
   const parsed = JSON.parse(text);
   if (!Array.isArray(parsed)) throw new Error("Model didn't return a JSON array");
   return parsed;
+}
+
+// Renders one claim as a cited quote block. Despite the prompt asking for a
+// bare integer source, models sometimes return "[3]" or "Article 3" anyway —
+// pull the first number out rather than trusting the format, so the
+// citation link still resolves either way.
+function renderClaimHtml(claim, articles) {
+  const match = String(claim?.source ?? "").match(/\d+/);
+  const idx = match ? Number(match[0]) : 0;
+  const src = articles[idx - 1];
+  const cite = src
+    ? `<cite>[${idx}] <a href="${escapeHtml(src.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(src.title)}</a> — ${escapeHtml(src.site_name)}, ${formatDate(src.published_at)}</cite>`
+    : "";
+  return `<div class="tension-claim">${escapeHtml(claim?.text || "")}${cite}</div>`;
 }
 
 function renderTensions(tensions, articles) {
@@ -1472,27 +1491,15 @@ function renderTensions(tensions, articles) {
       '<p class="ask-empty">No genuine tensions found in this set — try a wider date range or a different topic.</p>';
     return;
   }
-  const claimHtml = (claim) => {
-    // Despite the prompt asking for a bare integer, models sometimes return
-    // "[3]" or "Article 3" anyway — pull the first number out rather than
-    // trusting the format, so a citation link still resolves either way.
-    const match = String(claim?.source ?? "").match(/\d+/);
-    const idx = match ? Number(match[0]) : 0;
-    const src = articles[idx - 1];
-    const cite = src
-      ? `<cite>[${idx}] <a href="${escapeHtml(src.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(src.title)}</a> — ${escapeHtml(src.site_name)}, ${formatDate(src.published_at)}</cite>`
-      : "";
-    return `<div class="tension-claim">${escapeHtml(claim?.text || "")}${cite}</div>`;
-  };
   for (const t of tensions) {
     const div = document.createElement("div");
     div.className = "tension-card";
     div.innerHTML = `
       <p class="tension-hook">${escapeHtml(t.hook || "")}</p>
       <div class="tension-claims">
-        ${claimHtml(t.claim_a)}
+        ${renderClaimHtml(t.claim_a, articles)}
         <div class="tension-vs">vs</div>
-        ${claimHtml(t.claim_b)}
+        ${renderClaimHtml(t.claim_b, articles)}
       </div>
       ${t.why ? `<p class="tension-why">${escapeHtml(t.why)}</p>` : ""}
     `;
@@ -1516,11 +1523,224 @@ async function handleFindTensions() {
   try {
     const prompt = buildTensionPrompt(articles);
     const raw = await callProvider(prompt);
-    const tensions = parseTensionResponse(raw);
+    const tensions = parseJsonArrayResponse(raw);
     renderTensions(tensions, articles);
   } catch (err) {
     els.tensionResults.innerHTML = `<p class="tension-error">Error: ${escapeHtml(err.message)}</p>`;
   }
+}
+
+// ---------- today's brief ----------
+// The "every day I open the tool, give me something" feature: on load, if
+// an AI provider is already configured and there's no cached brief for
+// today yet, quietly generates one from the user's unread backlog — same
+// "what's genuinely worth noticing" reasoning as the tension finder, just
+// scoped automatically instead of the user picking a range. Cached once per
+// calendar day (so re-opening the tool the same day costs no extra API
+// call), and articles actually cited in a past brief are excluded from
+// future ones so the same item doesn't keep resurfacing.
+
+const DAILY_BRIEF_KEY = "blogArchive.dailyBrief.v1";
+const DAILY_BRIEF_SEEN_KEY = "blogArchive.dailyBriefSeenIds.v1";
+const DAILY_BRIEF_UNREAD_DAYS_PRIMARY = 3;
+const DAILY_BRIEF_UNREAD_DAYS_FALLBACK = 7;
+const DAILY_BRIEF_SEEN_CAP = 150;
+
+const DAILY_BRIEF_PROMPT_TEMPLATE = `You are picking out what's genuinely worth a curiosity-driven storyteller's
+attention today, from the articles below (their unread backlog from the last few days). Look for: a surprising
+fact, an overlooked consequence, a contradiction between two claims or sources, a hidden system behind
+something ordinary, a quiet change happening, a gap between assumption and reality, or a question nobody
+seems to be asking. This is not a news summary — skip anything that's just "here's what happened," and don't
+manufacture significance where there isn't any. If nothing here is genuinely worth surfacing, return [].
+
+For each item, return a JSON object with exactly these keys:
+- "hook": a short, curious framing (a question or observation) — not clickbait, not a headline.
+- "claims": an array of 1 or 2 objects {"text": one sentence stating the fact/claim, "source": the article's number as a bare integer, e.g. 3}. Use 2 when it's a genuine contradiction/tension between two things; use 1 when it's a single striking fact.
+- "why": one sentence on why this is worth noticing.
+
+Return ONLY a JSON array of these objects — no markdown code fences, no commentary before or after. Return at
+most 5, ranked most-interesting first.
+
+ARTICLES:
+
+{{articles}}`;
+
+// Local (not UTC) calendar date, so "today" matches the user's actual day
+// rather than flipping at UTC midnight mid-afternoon somewhere.
+function localDateString(d = new Date()) {
+  const tzOffset = d.getTimezoneOffset() * 60000;
+  return new Date(d - tzOffset).toISOString().slice(0, 10);
+}
+
+function loadDailyBrief() {
+  try {
+    return JSON.parse(localStorage.getItem(DAILY_BRIEF_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function saveDailyBrief(obj) {
+  localStorage.setItem(DAILY_BRIEF_KEY, JSON.stringify(obj));
+}
+
+function loadSeenIds() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(DAILY_BRIEF_SEEN_KEY));
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function addSeenIds(ids) {
+  const capped = [...loadSeenIds(), ...ids].slice(-DAILY_BRIEF_SEEN_CAP);
+  localStorage.setItem(DAILY_BRIEF_SEEN_KEY, JSON.stringify(capped));
+}
+
+function setTodayBadge(show) {
+  els.todayBadge.classList.toggle("hidden", !show);
+}
+
+function hasConfiguredAiProvider() {
+  const s = loadAiSettings();
+  if (s.provider === "local") return !!s.localUrl;
+  if (s.provider === "gemini") return !!s.geminiKey;
+  return !!s.groqKey;
+}
+
+// days-back window on the unread backlog; excludeIds are article ids already
+// cited in a previous brief, kept out so the same item doesn't repeat.
+function retrieveForDailyBrief(days, excludeIds, limit = 20) {
+  const cutoff = localDateString(new Date(Date.now() - days * 86400000));
+  // excludeIds are our own internal integer article ids, never user input,
+  // so inlining them directly (rather than binding) is safe here.
+  const excludeClause = excludeIds.length ? `AND a.id NOT IN (${excludeIds.join(",")})` : "";
+  return queryAll(
+    state.db,
+    `SELECT a.id, a.title, a.site_name, a.published_at, a.url, a.excerpt, a.content_text,
+            (SELECT GROUP_CONCAT(t.name, ', ') FROM article_tags at2 JOIN tags t ON t.id = at2.tag_id WHERE at2.article_id = a.id) AS tags
+     FROM articles a
+     WHERE a.read_at IS NULL
+       AND substr(COALESCE(a.published_at, a.fetched_at), 1, 10) >= $cutoff
+       ${excludeClause}
+     ORDER BY COALESCE(a.published_at, a.fetched_at) DESC LIMIT $limit`,
+    { $cutoff: cutoff, $limit: limit }
+  );
+}
+
+function buildDailyBriefPrompt(articles) {
+  return DAILY_BRIEF_PROMPT_TEMPLATE.replaceAll("{{articles}}", formatArticlesForPrompt(articles, 500));
+}
+
+function renderDailyBriefItems(items, articles) {
+  els.todayResults.innerHTML = "";
+  if (!items.length) {
+    els.todayResults.innerHTML =
+      '<p class="ask-empty">Nothing stood out in your unread backlog today — check back tomorrow, or browse the archive directly.</p>';
+    return;
+  }
+  for (const item of items) {
+    const claims = Array.isArray(item.claims) ? item.claims : [];
+    const claimsHtml = claims
+      .map((c) => renderClaimHtml(c, articles))
+      .join(claims.length > 1 ? '<div class="tension-vs">vs</div>' : "");
+    const div = document.createElement("div");
+    div.className = "tension-card";
+    div.innerHTML = `
+      <p class="tension-hook">${escapeHtml(item.hook || "")}</p>
+      <div class="tension-claims">${claimsHtml}</div>
+      ${item.why ? `<p class="tension-why">${escapeHtml(item.why)}</p>` : ""}
+    `;
+    els.todayResults.appendChild(div);
+  }
+}
+
+async function generateDailyBrief(force) {
+  const today = localDateString();
+  if (!force) {
+    const cached = loadDailyBrief();
+    if (cached && cached.date === today) {
+      renderDailyBriefItems(cached.items, cached.articles || []);
+      return cached;
+    }
+  }
+
+  if (!hasConfiguredAiProvider()) {
+    els.todayResults.innerHTML = '<p class="ask-empty">Set up an AI provider in 💬 Ask\'s ⚙ settings first, then reopen 🔆 Today.</p>';
+    return null;
+  }
+
+  els.todayResults.innerHTML = '<p class="tension-loading">Gathering your unread backlog…</p>';
+  const seen = loadSeenIds();
+  let articles = retrieveForDailyBrief(DAILY_BRIEF_UNREAD_DAYS_PRIMARY, seen);
+  if (articles.length < 5) articles = retrieveForDailyBrief(DAILY_BRIEF_UNREAD_DAYS_FALLBACK, seen);
+
+  if (!articles.length) {
+    const empty = { date: today, items: [], articles: [], opened: false };
+    saveDailyBrief(empty);
+    els.todayResults.innerHTML = '<p class="ask-empty">No new unread articles in the last week — nothing to brief today.</p>';
+    return empty;
+  }
+
+  els.todayResults.innerHTML = `<p class="tension-loading">Found ${articles.length} unread article(s), picking out what's worth noticing…</p>`;
+
+  try {
+    const prompt = buildDailyBriefPrompt(articles);
+    const raw = await callProvider(prompt);
+    const items = parseJsonArrayResponse(raw);
+    renderDailyBriefItems(items, articles);
+
+    const briefArticles = articles.map((a) => ({ id: a.id, title: a.title, url: a.url, site_name: a.site_name, published_at: a.published_at }));
+    saveDailyBrief({ date: today, items, articles: briefArticles, opened: false });
+
+    // Only articles actually cited in an item get marked "seen" — ones the
+    // AI passed over stay eligible for a future brief instead of silently
+    // disappearing from consideration forever.
+    const citedIndices = new Set();
+    for (const item of items) {
+      for (const c of item.claims || []) {
+        const m = String(c?.source ?? "").match(/\d+/);
+        if (m) citedIndices.add(Number(m[0]));
+      }
+    }
+    const citedIds = [...citedIndices].map((i) => articles[i - 1]?.id).filter(Boolean);
+    if (citedIds.length) addSeenIds(citedIds);
+
+    return { date: today, items, articles: briefArticles };
+  } catch (err) {
+    els.todayResults.innerHTML = `<p class="tension-error">Error: ${escapeHtml(err.message)}</p>`;
+    return null;
+  }
+}
+
+function maybeGenerateDailyBriefOnLoad() {
+  const today = localDateString();
+  const cached = loadDailyBrief();
+  if (cached && cached.date === today) {
+    renderDailyBriefItems(cached.items || [], cached.articles || []);
+    setTodayBadge(!cached.opened && cached.items && cached.items.length > 0);
+    return;
+  }
+  if (!hasConfiguredAiProvider()) return; // never auto-call an unconfigured provider
+  generateDailyBrief(false).then((result) => {
+    if (result && result.items && result.items.length && els.todayPanel.classList.contains("hidden")) {
+      setTodayBadge(true);
+    }
+  });
+}
+
+function wireTodayPanel() {
+  els.todayBtn.addEventListener("click", () => {
+    els.todayPanel.classList.toggle("hidden");
+    if (!els.todayPanel.classList.contains("hidden")) {
+      setTodayBadge(false);
+      const cached = loadDailyBrief();
+      if (cached) saveDailyBrief({ ...cached, opened: true });
+    }
+  });
+  els.todayCloseBtn.addEventListener("click", () => els.todayPanel.classList.add("hidden"));
+  els.todayRefreshBtn.addEventListener("click", () => generateDailyBrief(true));
 }
 
 // ---------- misc ----------

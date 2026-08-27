@@ -266,6 +266,20 @@ body {
 .tension-loading { color: var(--text-muted); font-style: italic; font-size: 0.82rem; }
 .tension-error { color: var(--danger); font-size: 0.82rem; }
 
+/* --- Today's brief --- */
+#today-btn { position: relative; }
+.today-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent2);
+  border: 1.5px solid var(--bg);
+}
+#today-refresh-btn { font-size: 0.95rem !important; }
+
 /* --- Graph --- */
 .graph-backdrop {
   position: fixed;

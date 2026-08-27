@@ -511,6 +511,44 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       afterward and got `finish_reason: "stop"` with real content
       immediately.
 
+## Done — v10 (Today's brief)
+- [x] **Today's brief** — new 🔆 Today button/panel, the direct answer to
+      "every day I open the tool, it should give me something." Auto-runs
+      once per calendar day (only when an AI provider is already configured
+      — never calls out on its own otherwise) against the user's unread
+      backlog from the last 3 days (widens to 7 if thin), asking the AI to
+      pick out up to 5 things worth a curiosity-driven storyteller's
+      attention (surprising fact / overlooked consequence / contradiction /
+      hidden system / quiet change / gap between assumption and reality —
+      broader than Tension finder's strict-pairs framing, so a schema of 1
+      *or* 2 sourced claims per item instead of always 2). Cached per
+      calendar day in `localStorage` so re-opening the same day is instant
+      and free; a badge dot on the button marks an unopened fresh brief.
+      Articles actually *cited* in a past brief (not the whole candidate
+      pool) are excluded from future retrieval so items don't repeat.
+      Refactored `parseTensionResponse`/inline claim-rendering out of the
+      tension finder into shared `parseJsonArrayResponse`/`renderClaimHtml`
+      so both features use the same tested parsing/citation logic.
+- [x] **Found and fixed a real bug during verification, not after
+      shipping:** the on-load cache-hit path in `maybeGenerateDailyBriefOnLoad`
+      set the badge correctly but never actually called
+      `renderDailyBriefItems`, so a same-day cached brief showed the static
+      placeholder text instead of its content until you hit ↻. Caught by
+      seeding a real cache entry via the browser and reloading — not
+      something a code read alone would have surfaced. Fixed by rendering
+      from cache in that branch too.
+- [x] **Verified against the real Groq API, not mocked:** retrieved 20 real
+      unread articles from the last 3 days (89 were available), built the
+      exact production prompt, and got back three genuinely good, correctly
+      -cited single-fact items — India's 2027 census questionnaire reusing
+      10 questions from the shelved National Population Register, an
+      invasive Rajasthan tree now sold to Google as carbon-removal credits,
+      and Nepal's flash floods traced to a weather system that started in
+      northern India. Confirmed all three citations resolve to the correct
+      real articles, and confirmed via direct DOM injection that the cards
+      render correctly for the single-claim case (Tension finder had only
+      exercised the two-claim case before this).
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →

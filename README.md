@@ -70,6 +70,8 @@ Full-text search uses SQLite's **FTS5** engine, which natively supports
 - **Tension finder** — surfaces genuine contradictions and surprising gaps
   across recent articles, for curiosity-driven storytelling rather than a
   news summary. See "Tension finder" below.
+- **Today's brief** — auto-generates once a day from your unread backlog, no
+  scope-picking needed. See "Today's brief" below.
 - **Local AI app access (MCP server)** — lets a locally-installed Claude
   Desktop app search/read the archive directly, no copy/paste. See "Local AI
   app access" below.
@@ -335,6 +337,33 @@ features now set it. Verified directly against the real Groq API before and
 after: the unfixed call returned 0 characters of content with 2046
 reasoning tokens burned; the fixed call returned real content immediately
 (`finish_reason: "stop"`).
+
+## Today's brief
+
+The 🔆 Today button answers "every day I open the tool, give me something" —
+no scope to pick, nothing to type. It's the same "find what's genuinely
+worth noticing" reasoning as ⚡ Tensions, just aimed automatically instead
+of by hand:
+
+1. On the first page load of the calendar day (only if an AI provider is
+   already configured in Ask — it never makes an API call on your behalf
+   without one set up), it quietly pulls your **unread** articles from the
+   last 3 days (widening to 7 if there's not much there) and asks the AI to
+   pick out up to 5 things worth noticing — a surprising fact, an
+   overlooked consequence, a contradiction, a hidden system, a quiet
+   change, a gap between assumption and reality.
+2. The result is **cached for the rest of that calendar day** — reopening
+   the tool later the same day shows the same brief instantly, no repeat
+   API call. A small dot on the 🔆 Today button shows there's a fresh one
+   you haven't opened yet; it clears once you do. Use ↻ in the panel to
+   force a fresh one before the day rolls over, if you want.
+3. Articles actually **cited** in a brief (not just the whole candidate
+   pool — items the AI passed over stay eligible) are remembered so they
+   don't get resurfaced in a future day's brief.
+
+It reuses Ask's AI provider settings, and items render the same way as
+Tension finder's cards — a hook, one or two sourced/cited claims, and why
+it's worth noticing.
 
 ## Local AI app access (MCP server)
 
