@@ -727,6 +727,30 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       raw coordinates to get a reliable signal on whether a feature
       actually worked.
 
+## Done — v16 (friendly EADDRINUSE message)
+- [x] **User hit this live**: double-clicked `preview.command`, the
+      auto-pull/sync worked correctly (pulled a real new commit,
+      `d880ee9..3ccae20`), then it crashed with a raw Node.js
+      `EADDRINUSE`/`throw er` stack trace — port 8080 already in use.
+      Root cause: a leftover `node src/preview.js` process from earlier in
+      *this session* (mine, from testing — PID 42053), still running and
+      never stopped, silently serving stale data on that port the whole
+      time. Killed it (`kill 42053`) so the user's freshly-pulled data
+      could actually be served.
+- [x] **Fixed for next time, not just this once**: `scraper/src/
+      preview.js`'s `serve()` now catches the server's `error` event and,
+      specifically for `EADDRINUSE`, prints a plain-English explanation
+      (this is almost always a previous preview session left running in
+      the background) plus the exact `lsof -i :8080` / `kill <PID>`
+      commands to copy-paste, then exits cleanly — instead of the raw
+      crash dump, which is meaningless to a non-developer user. Any other
+      error still throws normally (not swallowed).
+- [x] Verified live by actually reproducing the exact failure: started one
+      real preview instance, then ran a second against the now-occupied
+      port and confirmed the friendly message prints correctly (not a
+      stack trace) and the process exits with code 1 rather than crashing
+      uncaught.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →

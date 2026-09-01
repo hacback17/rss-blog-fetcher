@@ -92,6 +92,26 @@ function serve() {
       res.end(data);
     });
   });
+  // A raw EADDRINUSE stack trace is meaningless to someone who isn't a
+  // developer — this is far and away the most common way this script
+  // fails (a previous preview session left running in the background,
+  // e.g. from a closed Terminal window/tab that never got a Ctrl+C), so it
+  // gets a plain-English explanation and exact copy-pasteable commands
+  // instead of a crash dump.
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `\nCan't start — something is already using port ${PORT}. This is almost always a previous ` +
+          `preview session still running in the background (e.g. a Terminal window/tab you closed without ` +
+          `stopping it first).\n\nTo fix it:\n  1. Find what's using the port:   lsof -i :${PORT}\n` +
+          `  2. Stop it (swap in the PID number from step 1's output):   kill <PID>\n  3. Run this again.\n\n` +
+          `If that's confusing, restarting your Mac clears it too.\n`
+      );
+      process.exit(1);
+    }
+    throw err;
+  });
+
   server.listen(PORT, () => {
     const url = `http://localhost:${PORT}`;
     console.log(`Preview running at ${url} (Ctrl+C to stop)`);
