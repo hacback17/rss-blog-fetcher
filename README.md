@@ -577,7 +577,10 @@ can't clobber anything) and **opens your browser automatically**, so the
 above is the only thing you need to run to see the current archive,
 including whatever the daily Action added since you last looked. Re-run it
 any time; or on macOS, double-click **`preview.command`** at the repo root
-instead of opening a terminal at all.
+instead of opening a terminal at all. If port 8080 is already taken (most
+often an earlier preview session still running in the background), it
+automatically tries 8081, 8082, and so on instead of failing — check the
+first couple of lines it prints for the actual URL if it wasn't 8080.
 
 ## Sites currently tracked
 

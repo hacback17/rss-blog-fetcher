@@ -92,18 +92,30 @@ function serve() {
       res.end(data);
     });
   });
-  // A raw EADDRINUSE stack trace is meaningless to someone who isn't a
-  // developer — this is far and away the most common way this script
-  // fails (a previous preview session left running in the background,
-  // e.g. from a closed Terminal window/tab that never got a Ctrl+C), so it
-  // gets a plain-English explanation and exact copy-pasteable commands
-  // instead of a crash dump.
+  // Port 8080 being taken (almost always a previous preview session left
+  // running in the background — e.g. a closed Terminal tab that never got
+  // a Ctrl+C) used to just crash with a raw EADDRINUSE stack trace. Now it
+  // quietly tries the next port instead, same as most dev servers — no
+  // need to go find and kill the old process just to preview something.
+  const MAX_PORT_ATTEMPTS = 20;
+  let currentPort = PORT;
+  let attempts = 0;
+
   server.on("error", (err) => {
+    if (err.code === "EADDRINUSE" && attempts < MAX_PORT_ATTEMPTS) {
+      attempts++;
+      currentPort++;
+      server.listen(currentPort);
+      return;
+    }
     if (err.code === "EADDRINUSE") {
+      // Exhausted the fallback range (very unlikely) — a plain-English
+      // explanation still beats a crash dump for someone who isn't a
+      // developer.
       console.error(
-        `\nCan't start — something is already using port ${PORT}. This is almost always a previous ` +
-          `preview session still running in the background (e.g. a Terminal window/tab you closed without ` +
-          `stopping it first).\n\nTo fix it:\n  1. Find what's using the port:   lsof -i :${PORT}\n` +
+        `\nCan't start — ports ${PORT}-${currentPort} are all in use. This is almost always a pile-up of ` +
+          `previous preview sessions still running in the background.\n\nTo fix it:\n` +
+          `  1. Find what's using a port:   lsof -i :${PORT}\n` +
           `  2. Stop it (swap in the PID number from step 1's output):   kill <PID>\n  3. Run this again.\n\n` +
           `If that's confusing, restarting your Mac clears it too.\n`
       );
@@ -112,12 +124,17 @@ function serve() {
     throw err;
   });
 
-  server.listen(PORT, () => {
-    const url = `http://localhost:${PORT}`;
+  server.on("listening", () => {
+    const url = `http://localhost:${currentPort}`;
+    if (currentPort !== PORT) {
+      console.log(`Port ${PORT} was busy, so this is running on ${currentPort} instead.`);
+    }
     console.log(`Preview running at ${url} (Ctrl+C to stop)`);
     const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
     exec(`${opener} ${url}`, () => {}); // best-effort; fine if this fails (e.g. headless environment)
   });
+
+  server.listen(currentPort);
 }
 
 tryGitPull();

@@ -751,6 +751,28 @@ Repo: https://github.com/hacback17/rss-blog-fetcher
       stack trace) and the process exits with code 1 rather than crashing
       uncaught.
 
+## Done — v17 (auto-fallback to a free port)
+- [x] **User hit the v16 friendly message live** (still needed a manual
+      `lsof`/`kill`) and asked for the actually-better fix: when 8080 is
+      busy, just use another port instead of stopping. Implemented — on
+      `EADDRINUSE`, `serve()` now retries on `8081`, `8082`, ... up to 20
+      ports before giving up, same pattern as most dev servers (no more
+      hunting down and killing a previous session just to preview
+      something). The v16 friendly plain-English message is kept as the
+      last resort if all 20 fallback ports are somehow also taken.
+      Whichever port it actually binds gets printed and opened in the
+      browser, with an explicit "Port 8080 was busy, so this is running on
+      8082 instead" line so it's never a silent surprise.
+- [x] Verified live with a *real* conflict, not a staged one: while
+      testing, port 8080 turned out to already be genuinely occupied
+      (almost certainly the user's own currently-running preview session
+      from retrying after the v16 fix) — confirmed the new instance
+      correctly fell back to 8081 without being told to. Started a third
+      instance to confirm it keeps incrementing correctly (8080 and 8081
+      both busy → landed on 8082). Cleaned up both test instances
+      afterward, deliberately leaving the process on 8080 alone since it
+      was very likely the user's own live session, not mine to kill.
+
 ## Next / not started yet
 - [ ] Confirm GitHub Pages is enabled (Settings → Pages → Source → GitHub
       Actions) and Actions has write permissions (Settings → Actions →
