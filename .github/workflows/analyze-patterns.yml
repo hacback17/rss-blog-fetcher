@@ -32,6 +32,11 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Download latest archive database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/download-archive-db.sh
+
       - name: Install scraper dependencies
         working-directory: scraper
         run: npm ci --no-audit --no-fund

@@ -2,6 +2,7 @@ node_modules/
 .DS_Store
 *.log
 _site/
+data/blogs.db
 data/blogs.db-wal
 data/blogs.db-shm
 web/data/

@@ -10,6 +10,10 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: "archive-database"
+  cancel-in-progress: false
+
 jobs:
   add-site:
     # Restricted to repo owner/collaborators — this workflow commits to the
@@ -51,6 +55,11 @@ jobs:
           git commit -m "chore: add source $SITE_NAME (#$ISSUE_NUMBER)"
           git push
 
+      - name: Download latest archive database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/download-archive-db.sh
+
       - name: First scrape for the new site
         working-directory: scraper
         env:
@@ -65,18 +74,16 @@ jobs:
           SITE_ID: ${{ steps.parse.outputs.site_id }}
         run: node --experimental-sqlite src/print-site-run-summary.js "$SITE_ID"
 
-      - name: Commit scraped data
+      - name: Persist scraped data
         env:
           SITE_NAME: ${{ steps.parse.outputs.site_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git config user.name "blog-archiver-bot"
-          git config user.email "actions@users.noreply.github.com"
-          if git diff --quiet -- data/blogs.db; then
+          updated_sha="$(sha256sum data/blogs.db | cut -d' ' -f1)"
+          if [ "$updated_sha" = "$ARCHIVE_DB_SHA256" ]; then
             echo "No new data."
           else
-            git add data/blogs.db
-            git commit -m "chore: first scrape for $SITE_NAME"
-            git push
+            scripts/upload-archive-db.sh
           fi
 
       - name: Comment and close issue
