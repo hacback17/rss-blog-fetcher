@@ -31,7 +31,7 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 // being fetched concurrently. A simple promise-chained queue serializes
 // Groq calls across all concurrent workers to a safe minimum spacing.
 const MIN_CALL_INTERVAL_MS = 4000;
-const MAX_GROQ_ATTEMPTS = 3;
+const MAX_GROQ_ATTEMPTS = 2;
 let groqQueueTail = Promise.resolve();
 
 function throttledGroqCall(prompt) {
@@ -110,7 +110,7 @@ async function callGroq(prompt) {
 
     const retryAfterSeconds = Number(res.headers.get("retry-after"));
     const delayMs = Number.isFinite(retryAfterSeconds)
-      ? Math.min(retryAfterSeconds * 1000, 30000)
+      ? Math.min(retryAfterSeconds * 1000, 10000)
       : 4000 * attempt;
     console.warn(`  ! Groq HTTP ${res.status}; retrying in ${Math.ceil(delayMs / 1000)}s`);
     await new Promise((resolve) => setTimeout(resolve, delayMs));
