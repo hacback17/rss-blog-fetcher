@@ -10,6 +10,10 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: "archive-database"
+  cancel-in-progress: false
+
 jobs:
   add-article:
     # Restricted to repo owner/collaborators — this workflow commits to the
@@ -28,6 +32,11 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Download latest archive database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/download-archive-db.sh
+
       - name: Install scraper dependencies
         working-directory: scraper
         run: npm ci --no-audit --no-fund
@@ -43,17 +52,16 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: echo "$ISSUE_BODY" | node --experimental-sqlite src/add-article-from-issue.js
 
-      - name: Commit scraped data
+      - name: Persist scraped data
         id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git config user.name "blog-archiver-bot"
-          git config user.email "actions@users.noreply.github.com"
-          if git diff --quiet -- data/blogs.db; then
+          updated_sha="$(sha256sum data/blogs.db | cut -d' ' -f1)"
+          if [ "$updated_sha" = "$ARCHIVE_DB_SHA256" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            git add data/blogs.db
-            git commit -m "chore: add article(s) (#${{ github.event.issue.number }})"
-            git push
+            scripts/upload-archive-db.sh
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 

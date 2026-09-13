@@ -31,6 +31,7 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 // being fetched concurrently. A simple promise-chained queue serializes
 // Groq calls across all concurrent workers to a safe minimum spacing.
 const MIN_CALL_INTERVAL_MS = 4000;
+const MAX_GROQ_ATTEMPTS = 3;
 let groqQueueTail = Promise.resolve();
 
 function throttledGroqCall(prompt) {
@@ -72,32 +73,48 @@ function buildPrompt(article, vocabulary) {
 }
 
 async function callGroq(prompt) {
-  const res = await fetchWithTimeout(
-    GROQ_URL,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-        "Content-Type": "application/json",
+  for (let attempt = 1; attempt <= MAX_GROQ_ATTEMPTS; attempt += 1) {
+    const res = await fetchWithTimeout(
+      GROQ_URL,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.2,
+          // gpt-oss is a reasoning model; without this it burns hundreds of
+          // hidden reasoning tokens on a simple tagging task and blows
+          // straight through the free tier's tokens-per-minute limit.
+          reasoning_effort: "low",
+          response_format: { type: "json_object" },
+        }),
       },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2,
-        // gpt-oss is a reasoning model; without this it burns hundreds of
-        // hidden reasoning tokens on a simple tagging task and blows
-        // straight through the free tier's tokens-per-minute limit.
-        reasoning_effort: "low",
-        response_format: { type: "json_object" },
-      }),
-    },
-    20000
-  );
-  if (!res.ok) throw new Error(`Groq HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Groq returned no content");
-  return content;
+      20000
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) throw new Error("Groq returned no content");
+      return content;
+    }
+
+    const detail = (await res.text()).slice(0, 200);
+    const retryable = res.status === 429 || res.status >= 500;
+    if (!retryable || attempt === MAX_GROQ_ATTEMPTS) {
+      throw new Error(`Groq HTTP ${res.status}: ${detail}`);
+    }
+
+    const retryAfterSeconds = Number(res.headers.get("retry-after"));
+    const delayMs = Number.isFinite(retryAfterSeconds)
+      ? Math.min(retryAfterSeconds * 1000, 30000)
+      : 4000 * attempt;
+    console.warn(`  ! Groq HTTP ${res.status}; retrying in ${Math.ceil(delayMs / 1000)}s`);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
 }
 
 function cleanList(list, maxLen, maxItems) {

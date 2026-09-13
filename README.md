@@ -10,7 +10,7 @@ on GitHub Actions — no laptop required.
 
 ```
 scraper/                Node.js: sitemap/RSS discovery → full-article extraction → SQLite → auto-tag
-data/blogs.db            the SQLite database (committed to the repo by the Action)
+data/blogs.db            local working copy of the SQLite database (not tracked by Git)
 reports/                 Markdown pattern-analysis reports (see "Intelligence-style pattern analysis")
 web/                     static reader + topic graph + Ask-your-archive UI, runs in the browser (no backend)
 .github/ISSUE_TEMPLATE/   add-site.yml, add-article.yml, remove-site.yml issue forms
@@ -23,9 +23,11 @@ web/                     static reader + topic graph + Ask-your-archive UI, runs
   deploy.yml               shared "publish to Pages" step the other five call
 ```
 
-**No server, ever.** The GitHub Action scrapes new articles, writes them into
-`data/blogs.db`, and commits it back to the repo. A second job in the same
-workflow publishes `web/` + `data/blogs.db` to GitHub Pages. The page loads
+**No server, ever.** The GitHub Action downloads the latest `blogs.db` from
+the dedicated `archive-database` GitHub Release, scrapes new articles into
+it, and replaces that release asset. A second job publishes `web/` plus the
+same database to GitHub Pages. Code, configuration, and reports stay in Git;
+the growing mutable database does not. The page loads
 the SQLite file with the [official SQLite Wasm build](https://sqlite.org/wasm)
 (`@sqlite.org/sqlite-wasm` — chosen specifically because it has FTS5 compiled
 in, unlike the more popular `sql.js` package) and runs all search/browsing
@@ -169,7 +171,7 @@ to write back to. The split:
   unread counts, tag sidebar, filters, search) *and* mirrored into an
   "overlay" in that browser's `localStorage` so they survive a page reload.
   This overlay is **per-browser** — it does not sync itself to other
-  devices or back into the committed database.
+  devices or back into the shared release database.
 
 To make browser-side changes durable/shared: **Data ⇅ menu → "Export my
 read/tag state"** downloads a small JSON file. Either keep re-importing it on
@@ -179,7 +181,8 @@ database once in a while:
 ```bash
 cd scraper
 npm run apply-overlay -- path/to/blog-archive-state.json
-git add ../data/blogs.db && git commit -m "sync read/tag state" && git push
+cd ..
+scripts/upload-archive-db.sh
 ```
 
 ## Portability
@@ -512,24 +515,20 @@ off doesn't change.
 
 ## A note on long-term storage (years of data)
 
-At the current pace (~500 articles ≈ 12MB), even 100,000 articles over many
-years of daily scraping would land around 2-3GB — comfortably inside
-GitHub's free, no-cost limits (repos are soft-capped around 1-5GB with no
-hard block below that, and GitHub Pages sites up to 1GB). **No action needed
-for years.** If it ever does become a problem, the fix doesn't require a paid
-service: split `data/blogs.db` into one file per year
-(`data/blogs-2028.db`, ...) loaded on demand by the web UI, or move older
-years to GitHub Releases (2GB per file, effectively unlimited total, still
-free). Worth revisiting only once the repo actually approaches a few GB —
-not a reason to add complexity today.
+The mutable database lives as `blogs.db` on the dedicated
+`archive-database` GitHub Release, outside normal Git history. Release assets
+support files much larger than Git's 100MB per-file limit, while Pages still
+receives the current database on every deployment. If the database eventually
+approaches the Pages site-size limit, split older years into separately loaded
+databases; no change is needed before then.
 
 ## One-time setup
 
 1. **Push this repo to GitHub** (already wired up once you gave me the repo URL).
 2. **Enable GitHub Pages**: repo → Settings → Pages → Source → **GitHub Actions**.
 3. **Enable Actions write permissions**: repo → Settings → Actions → General →
-   Workflow permissions → **Read and write permissions** (needed so the
-   Action can commit `data/blogs.db` back to the repo).
+   Workflow permissions → **Read and write permissions** (needed for the
+   release asset and issue-driven configuration changes).
 4. Push to `main` once, or click **Run workflow** on the
    "Scrape blogs and deploy archive" Action tab to run it manually the first
    time.
@@ -553,15 +552,26 @@ npm install
 npm run run
 ```
 
-This updates `data/blogs.db` in place.
+First download the current shared database, then run the scraper:
+
+```bash
+cd ..
+scripts/download-archive-db.sh
+cd scraper
+npm run run
+```
+
+This updates your untracked local `data/blogs.db` in place. Run
+`scripts/upload-archive-db.sh` from the repository root only when you intend
+to replace the shared database (the GitHub CLI must be authenticated).
 
 **To preview locally:** `web/` is served from GitHub Pages in production,
 which is a different origin than your local files — a browser opened
 straight at `web/index.html` (a `file://` URL) can't `fetch()` the database,
 sites config, or reports next to it (that's the "Failed to load database:
 SQLITE_CANTOPEN" error if you've hit it), and those files aren't checked
-into git in the first place (`web/data/`, `web/reports/` are gitignored —
-only `data/blogs.db` and `reports/` at the repo root are tracked). One
+into git in the first place (`web/data/`, `web/reports/`, and `data/blogs.db`
+are gitignored; reports at the repo root are tracked). One
 command handles both: copies the current database/config/reports into
 `web/` and serves it:
 
@@ -685,7 +695,7 @@ npm run add-article -- https://example.com/a https://example.com/b --tags="Follo
 It runs the exact same extraction/auto-tagging pipeline as regular scraping.
 If the URL's site is already configured, the article joins that source; if
 not, it gets its own bucket named after the domain (e.g. `en.wikipedia.org`).
-This writes straight to the real, committed database — unlike "Add pasted
+This writes straight to the shared release database — unlike "Add pasted
 text", there's no browser-overlay/sync step involved.
 
 ### Substack (and other newsletters)

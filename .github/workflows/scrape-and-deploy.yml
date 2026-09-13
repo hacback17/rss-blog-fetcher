@@ -12,14 +12,16 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  # Every database writer uses this group so two runs cannot download the
+  # same snapshot and then overwrite each other's changes.
+  group: "archive-database"
   cancel-in-progress: false
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
     outputs:
-      db_changed: ${{ steps.commit.outputs.changed }}
+      db_changed: ${{ steps.persist.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,6 +30,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      - name: Download latest archive database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/download-archive-db.sh
 
       - name: Install scraper dependencies
         working-directory: scraper
@@ -39,17 +46,17 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: npm run run
 
-      - name: Commit updated database
-        id: commit
+      - name: Persist updated database
+        id: persist
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git config user.name "blog-archiver-bot"
-          git config user.email "actions@users.noreply.github.com"
-          if git diff --quiet -- data/blogs.db; then
+          updated_sha="$(sha256sum data/blogs.db | cut -d' ' -f1)"
+          if [ "$updated_sha" = "$ARCHIVE_DB_SHA256" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No database changes to upload."
           else
-            git add data/blogs.db
-            git commit -m "chore: daily scrape $(date -u +'%Y-%m-%d')"
-            git push
+            scripts/upload-archive-db.sh
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 

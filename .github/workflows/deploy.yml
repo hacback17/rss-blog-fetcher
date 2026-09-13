@@ -19,6 +19,11 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
+      - name: Download latest archive database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/download-archive-db.sh
+
       - name: Assemble site
         run: |
           mkdir -p _site/data _site/reports

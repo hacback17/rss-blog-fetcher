@@ -10,6 +10,10 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: "archive-database"
+  cancel-in-progress: false
+
 jobs:
   remove-site:
     # Restricted to repo owner/collaborators — this can permanently delete
@@ -29,6 +33,11 @@ jobs:
         working-directory: scraper
         run: npm ci --no-audit --no-fund
 
+      - name: Download latest archive database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/download-archive-db.sh
+
       - name: Parse issue and remove site
         id: remove
         working-directory: scraper
@@ -38,16 +47,21 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: echo "$ISSUE_BODY" | node --experimental-sqlite src/remove-site-from-issue.js
 
-      - name: Commit changes
+      - name: Commit configuration and persist database
         env:
           SITE_NAME: ${{ steps.remove.outputs.site_name }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "blog-archiver-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add scraper/config/sites.json data/blogs.db
+          git add scraper/config/sites.json
           git commit -m "chore: remove source $SITE_NAME (#$ISSUE_NUMBER)"
           git push
+          updated_sha="$(sha256sum data/blogs.db | cut -d' ' -f1)"
+          if [ "$updated_sha" != "$ARCHIVE_DB_SHA256" ]; then
+            scripts/upload-archive-db.sh
+          fi
 
       - name: Comment and close issue
         env:
